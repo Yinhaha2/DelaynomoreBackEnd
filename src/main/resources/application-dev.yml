@@ -1,0 +1,38 @@
+# 本地开发：连接 init.sql 创建的 schoolshop 库
+# 密码配置（任选其一）：
+#   1. 编辑 application-local.yml 中的 password（推荐）
+#   2. 环境变量：$env:MYSQL_PASSWORD="你的密码"
+# 默认空密码仅适用于本机 MySQL root 未设密的情况
+spring:
+  datasource:
+    url: jdbc:mysql://localhost:3306/schoolshop?useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true&useSSL=false
+    username: ${MYSQL_USER:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      pool-name: SchoolShopHikari
+      minimum-idle: 5
+      maximum-pool-size: 20
+      connection-timeout: 30000
+  config:
+    import: optional:classpath:application-local.yml
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  type-aliases-package: org.example.schoolshop.domain
+  configuration:
+    map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+  global-config:
+    db-config:
+      id-type: auto
+      table-underline: true
+
+schoolshop:
+  jwt:
+    secret: schoolshop-dev-jwt-secret-key-32bytes!!
+    expire-hours: 168
+
+logging:
+  level:
+    org.example.schoolshop: debug
+    com.zaxxer.hikari: info

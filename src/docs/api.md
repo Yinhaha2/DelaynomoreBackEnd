@@ -2,7 +2,8 @@
 
 > **版本**：v1.0  
 > **适用**：Spring Boot 3.x + MySQL 8 + Redis + 阿里云 OSS + 微信小程序  
-> **小程序前端**：`schoolshop/`（uni-app），本文档与前端 `api/` 目录一一对应  
+> **小程序前端**：`E:\schoolshop\schoolshop`（uni-app），本文档与前端 `api/` 目录一一对应  
+> **完整 DDL**：见 [mysql.md](./mysql.md)
 > **管理端**：B 端 Admin 接口见 [第十章](#十管理端-admin-api-概要)（后续迭代）
 
 ---
@@ -24,6 +25,9 @@
 13. [定时任务](#十三定时任务)
 14. [数据库设计参考](#十四数据库设计参考)
 15. [管理端 Admin API 概要](#十五管理端-admin-api-概要)
+16. [附录 A：错误 message 一览](#附录-a错误-message-一览)
+17. [附录 B：与前端页面对照](#附录-b与前端页面对照)
+18. [附录 C：前端实现现状与后端约定](#附录-c前端实现现状与后端约定)
 
 ---
 
@@ -201,14 +205,16 @@ job/            # 定时任务（自动验收等）
 
 ### 3.7 通知 `activity.type`
 
-| type | 说明 | postId |
-|------|------|--------|
-| FOLLOW | 关注 | null |
-| LIKE_POST | 赞帖子 | 有 |
-| COMMENT_POST | 评论帖子 | 有 |
-| SAVE_POST | 收藏帖子 | 有 |
-| SHARE_POST | 分享帖子 | 有 |
-| LIKE_COMMENT | 赞评论 | 有 |
+| type | 说明 | postId | v1 |
+|------|------|--------|-----|
+| FOLLOW | 关注 | null | 是 |
+| LIKE_POST | 赞帖子 | 有 | 是 |
+| COMMENT_POST | 评论帖子 | 有 | 是 |
+| SAVE_POST | 收藏帖子 | 有 | **否（v2 预留）** |
+| SHARE_POST | 分享帖子 | 有 | **否（v2 预留）** |
+| LIKE_COMMENT | 赞评论 | 有 | **否（v2 预留）** |
+
+> v1 仅写入 FOLLOW / LIKE_POST / COMMENT_POST；SAVE_POST、SHARE_POST、LIKE_COMMENT 前端可展示 mock 数据，后端不生成、不建 `post_save` 表。
 
 ### 3.8 帖子分类 `categoryId`
 
@@ -452,7 +458,7 @@ Content-Type: multipart/form-data
 | 后缀 | 仅 `pdf`, `doc`, `docx` |
 | 大小 | 建议 ≤20MB |
 
-**处理**：上传至 OSS **私有** Bucket，返回 `fileKey`，禁止返回永久公网 URL。
+**处理**：上传至 OSS **私有** Bucket；写入 `upload_file`（`biz_type=material`）供上架校验；返回 `fileKey`，禁止返回永久公网 URL。
 
 **响应 `data`**
 
@@ -690,17 +696,25 @@ POST /api/tasks
   "location": "地点",
   "rewardAmount": 500,
   "category": "pickup",
-  "deadline": "2026-05-17T18:00:00+08:00"
+  "deadline": "2026-05-17T18:00:00+08:00",
+  "tags": ["代取", "急单"]
 }
 ```
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| title, description, location, rewardAmount | 是 | 与前端 `pages/commission/create.vue` 一致 |
+| category | 否 | 默认 `other`（前端当前未传） |
+| deadline | 否 | 默认创建时间 + **7 天** |
+| tags | 否 | 未传时按 category 映射默认标签（见 [mysql.md](./mysql.md) §4） |
 
 **业务**
 
 1. 实名 + 未封禁
 2. `msgSecCheck` 标题与描述
 3. `rewardAmount` 最低 100 分（1 元）
-4. 插入 `task`，`status=0`
-5. 调微信统一下单，返回 `payParams`
+4. 插入 `task`，`status=0`；同步插入 `order`（`type=task`, `status=0`, `biz_id=task.id`, `title=task.title`, `amount=rewardAmount`）
+5. 调微信统一下单（`out_trade_no` 关联该 `order`），返回 `payParams`
 
 **响应 `data`**
 
@@ -858,11 +872,17 @@ POST /api/materials
   "description": "简介",
   "price": 100,
   "fileKey": "materials/...",
-  "coverUrl": "https://..."
+  "coverUrl": "https://...",
+  "category": "report"
 }
 ```
 
-- 校验 `fileKey` 归属当前用户上传记录
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| title, fileKey | 是 | 与前端 `pages/market/publish.vue` 一致 |
+| category | 否 | 默认 `report`（前端当前未传） |
+
+- 校验 `fileKey` 归属 `upload_file` 表中当前用户记录
 - 初始 `status=0` 或走审核策略
 
 **响应**
@@ -1063,6 +1083,8 @@ GET /api/orders?page=1&pageSize=10&type=
 
 `type` 可选：`material` | `task`
 
+数据来源：统一查询 `order` 表（资料购买与任务支付均写入，见 §8.3、§9.4、§12.2）。
+
 ```json
 {
   "list": [
@@ -1081,6 +1103,8 @@ GET /api/orders?page=1&pageSize=10&type=
   "pageSize": 10
 }
 ```
+
+`status` 字符串映射：`0` → `pending`，`1` → `completed`，`2` → `cancelled`（与 §3.5 一致）。
 
 ---
 
@@ -1119,8 +1143,19 @@ POST /api/wallet/withdraw
 { "amount": 5000 }
 ```
 
-- `amount` ≤ `balance`，最低 100 分
-- 冻结余额，生成 `withdraw` 待 Admin 审核打款
+- `amount` ≤ 可用余额（`wallet_balance - wallet_frozen`），最低 100 分
+- `wallet_frozen` 增加对应金额，生成 `withdraw` 待 Admin 审核打款
+
+**响应 `data`（示例）**
+
+```json
+{
+  "id": 1,
+  "status": "pending"
+}
+```
+
+提现 `status` 映射：`0` → `pending`，`1` → `completed`，`2` → `rejected`。
 
 ---
 
@@ -1149,8 +1184,10 @@ Content-Type: application/json 或 text/xml（按微信 v3 规范）
 
 | 订单类型 | 处理 |
 |----------|------|
-| 任务支付 | `task.status: 0→1` |
-| 资料购买 | `order.status→completed`，插入 `user_material`，卖家钱包入账（扣手续费） |
+| 任务支付 | `order.status: 0→1`（`type=task`）；`task.status: 0→1` |
+| 资料购买 | `order.status: 0→1`（`type=material`）；插入 `user_material`；卖家钱包入账（扣手续费） |
+
+两种类型均先写入 `pay_notify_log` 保证幂等，再更新 `order` 与业务表。
 
 **响应**：按微信文档返回成功 ACK。
 
@@ -1182,30 +1219,34 @@ Content-Type: application/json 或 text/xml（按微信 v3 规范）
 
 ## 十四、数据库设计参考
 
+> **完整 `CREATE TABLE` 语句**见 [mysql.md](./mysql.md)。
+
 ### 14.1 核心表（简表）
 
 | 表名 | 说明 |
 |------|------|
-| user | 用户、openid、钱包余额、实名、status |
-| post | 帖子 |
-| post_like | 点赞关系，UK(user_id, post_id) |
-| post_comment | 评论 |
-| task | 悬赏，含 version 乐观锁 |
-| material | 资料 |
+| user | 用户、openid、钱包余额/冻结、实名、status |
+| user_follow | 关注，UK(follower_id, followee_id) |
+| upload_file | 上传暂存，fileKey 归属校验 |
+| task | 悬赏，含 version、tags(JSON) |
+| material | 资料，含 file_key、file_name |
 | user_material | 购买关系，UK(user_id, material_id) |
-| order | 订单 |
+| post | 帖子，含 is_deleted 软删除 |
+| post_like | 点赞，UK(user_id, post_id) |
+| post_comment | 评论 |
+| order | 统一订单（material / task） |
 | wallet_record | 流水 |
 | withdraw | 提现申请 |
 | activity_notification | 动态通知 |
-| message | 私信 |
-| user_follow | 关注关系，UK(follower_id, followee_id) |
-| pay_notify_log | 支付回调幂等日志 |
+| conversation | 私信会话摘要 |
+| message | 私信消息 |
+| pay_notify_log | 支付回调幂等，UK(out_trade_no) |
 
 ### 14.2 关键字段示例 `task`
 
 ```sql
 id, publisher_id, acceptor_id, title, description, location,
-reward_amount, status, category, delivery_note, delivery_images(JSON),
+reward_amount, status, category, tags(JSON), delivery_note, delivery_images(JSON),
 version, created_at, accepted_at, delivered_at, completed_at, deadline
 ```
 
@@ -1215,6 +1256,8 @@ version, created_at, accepted_at, delivered_at, completed_at, deadline
 - `task(status, category, created_at)`
 - `material(status, created_at)`
 - `activity_notification(user_id, read, created_at)`
+
+（其余见 [mysql.md](./mysql.md) 各表定义。）
 
 ---
 
@@ -1278,8 +1321,45 @@ version, created_at, accepted_at, delivered_at, completed_at, deadline
 | 消息-私信 | GET conversations，GET messages/{peerId}，POST send |
 | 用户主页 | GET users/{id}/home，POST follow |
 | 我的/钱包/订单 | profile，wallet，orders，showcase |
+| 搜索 | 复用 GET /api/posts、/api/tasks、/api/materials 的 `keyword`，无独立搜索接口 |
 
 ---
 
-**文档维护**：后端实现时若字段有增减，请同步更新本文档及小程序 `api/` 层。  
-**联调**：前端将 `utils/config.js` 中 `BASE_URL` 指向后端，`USE_MOCK` 设为 `false`。
+## 附录 C：前端实现现状与后端约定
+
+> 前端工程路径：`E:\schoolshop\schoolshop`（uni-app，`api/` 与 `pages/` 与本文档对照）。
+
+### C.1 请求体未传字段的默认值
+
+| 接口 | 前端实际提交 | 后端默认 |
+|------|----------------|----------|
+| POST /api/tasks | title, description, location, rewardAmount | category=`other`；deadline=创建时间+7天；tags 按 category 映射 |
+| POST /api/materials | title, description, price, fileKey, coverUrl | category=`report` |
+
+### C.2 列表响应增强
+
+- **帖子列表**：除 `categoryName` 外须返回 `categoryId`（前端首页可按 id 筛选，当前 mock 仅含 name）。
+- **任务列表**：返回 `tags` 数组（可为后端按 category 生成）。
+
+### C.3 v1 不实现的能力
+
+| 能力 | 说明 |
+|------|------|
+| SAVE_POST / SHARE_POST / LIKE_COMMENT 通知 | 前端可展示 mock，后端 v1 不写入 |
+| 帖子收藏 / 分享 | 无 API、无数据表 |
+| 独立 /api/search | 搜索页分别调用 posts、tasks、materials 的 keyword |
+| 实名认证接口 | info 页有入口未接 API；§5.6 建议后续实现 |
+
+### C.4 订单与支付联动
+
+- 创建任务时同步写 `order`（type=task, status=0）。
+- 购买资料时写 `order`（type=material, status=0）。
+- 支付回调统一更新 `order.status` 及 task / user_material 业务表（§12.2）。
+
+### C.5 联调
+
+前端将 `utils/config.js` 中 `BASE_URL` 指向后端，`USE_MOCK` 设为 `false`。
+
+---
+
+**文档维护**：后端实现时若字段有增减，请同步更新本文档、[mysql.md](./mysql.md) 及小程序 `api/` 层。
