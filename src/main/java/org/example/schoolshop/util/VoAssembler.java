@@ -97,6 +97,7 @@ public final class VoAssembler {
         vo.setType(order.getType());
         vo.setTitle(order.getTitle());
         vo.setAmount(order.getAmount());
+        vo.setUnit("points");
         vo.setStatus(OrderStatusUtil.toFrontend(order.getStatus()));
         vo.setCreatedAt(order.getCreatedAt());
         return vo;

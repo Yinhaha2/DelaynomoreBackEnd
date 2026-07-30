@@ -9,6 +9,7 @@ import org.example.schoolshop.domain.User;
 import org.example.schoolshop.domain.UserFollow;
 import org.example.schoolshop.dto.vo.ActivityVO;
 import org.example.schoolshop.mapper.ActivityNotificationMapper;
+import org.example.schoolshop.mapper.ConversationMapper;
 import org.example.schoolshop.mapper.UserFollowMapper;
 import org.example.schoolshop.mapper.UserMapper;
 import org.example.schoolshop.service.NotificationService;
@@ -28,6 +29,7 @@ public class NotificationServiceImpl implements NotificationService {
     private final ActivityNotificationMapper notificationMapper;
     private final UserMapper userMapper;
     private final UserFollowMapper userFollowMapper;
+    private final ConversationMapper conversationMapper;
 
     @Override
     public Map<String, Object> listActivities(long userId, Integer page, Integer pageSize) {
@@ -69,9 +71,11 @@ public class NotificationServiceImpl implements NotificationService {
     public Map<String, Integer> unreadCount(long userId) {
         long activityUnread = notificationMapper.selectCount(new LambdaQueryWrapper<ActivityNotification>()
                 .eq(ActivityNotification::getUserId, userId).eq(ActivityNotification::getRead, 0));
-        // TODO: 加上私信未读
+        long messageUnread = conversationMapper.selectList(new LambdaQueryWrapper<org.example.schoolshop.domain.Conversation>()
+                .eq(org.example.schoolshop.domain.Conversation::getUserId, userId))
+                .stream().mapToInt(c -> c.getUnread() != null ? c.getUnread() : 0).sum();
         Map<String, Integer> data = new HashMap<>();
-        data.put("count", (int) activityUnread);
+        data.put("count", (int) (activityUnread + messageUnread));
         return data;
     }
 

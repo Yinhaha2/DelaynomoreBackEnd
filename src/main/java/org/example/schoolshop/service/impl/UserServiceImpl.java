@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.example.schoolshop.common.BizException;
 import org.example.schoolshop.domain.*;
+import org.example.schoolshop.dto.req.RealNameVerifyRequest;
 import org.example.schoolshop.dto.req.UpdateProfileRequest;
 import org.example.schoolshop.dto.vo.MaterialItemVO;
 import org.example.schoolshop.dto.vo.PostItemVO;
@@ -131,5 +132,18 @@ public class UserServiceImpl implements UserService {
         Map<String, Boolean> result = new HashMap<>();
         result.put("followed", followed);
         return result;
+    }
+
+    @Override
+    public UserVO realNameVerify(long userId, RealNameVerifyRequest request) {
+        User user = requireActiveUser(userId);
+        String sid = request.getStudentId().trim();
+        if (sid.length() < 6 || sid.length() > 20) {
+            throw BizException.badRequest("学号格式不正确");
+        }
+        user.setStudentId(sid);
+        user.setRealNameVerified(true);
+        userMapper.updateById(user);
+        return VoAssembler.toUserVO(user);
     }
 }

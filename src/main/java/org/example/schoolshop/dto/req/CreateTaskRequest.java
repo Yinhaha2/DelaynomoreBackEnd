@@ -17,9 +17,10 @@ public class CreateTaskRequest {
     @NotBlank
     private String location;
     @NotNull
-    @Min(100)
+    @Min(50)
     private Integer rewardAmount;
     private String category;
     private LocalDateTime deadline;
     private List<String> tags;
+    private Long fromSpotId;
 }

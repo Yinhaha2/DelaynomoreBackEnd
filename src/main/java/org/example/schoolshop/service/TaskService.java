@@ -26,4 +26,10 @@ public interface TaskService {
     Map<String, Object> confirm(long userId, long taskId);
 
     PageResult<TaskItemVO> myTasks(long userId, String type, Integer page, Integer pageSize);
+
+    Map<String, Object> cancel(long userId, long taskId);
+
+    int autoConfirmExpiredTasks();
+
+    int cancelExpiredRecruitingTasks();
 }

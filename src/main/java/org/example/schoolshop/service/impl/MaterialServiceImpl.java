@@ -12,15 +12,18 @@ import org.example.schoolshop.domain.User;
 import org.example.schoolshop.domain.UserMaterial;
 import org.example.schoolshop.dto.req.PublishMaterialRequest;
 import org.example.schoolshop.dto.vo.MaterialItemVO;
-import org.example.schoolshop.dto.vo.PayParamsVO;
+import org.example.schoolshop.integration.oss.OssStorageService;
 import org.example.schoolshop.mapper.*;
+import org.example.schoolshop.service.ContentSecurityService;
 import org.example.schoolshop.service.MaterialService;
+import org.example.schoolshop.service.PointsService;
 import org.example.schoolshop.service.UserService;
 import org.example.schoolshop.util.VoAssembler;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -31,11 +34,16 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class MaterialServiceImpl implements MaterialService {
 
+    private static final int PLATFORM_FEE_PERCENT = 5;
+
     private final MaterialMapper materialMapper;
     private final UserMaterialMapper userMaterialMapper;
     private final UploadFileMapper uploadFileMapper;
     private final TradeOrderMapper orderMapper;
     private final UserService userService;
+    private final PointsService pointsService;
+    private final ContentSecurityService contentSecurityService;
+    private final OssStorageService ossStorageService;
 
     @Override
     public PageResult<MaterialItemVO> list(Integer page, Integer pageSize, String sortBy, String category,
@@ -76,6 +84,8 @@ public class MaterialServiceImpl implements MaterialService {
     @Transactional
     public Map<String, Object> publish(long userId, PublishMaterialRequest request) {
         userService.requireActiveUser(userId);
+        contentSecurityService.checkText(request.getTitle());
+        contentSecurityService.checkText(request.getDescription());
         long cnt = uploadFileMapper.selectCount(new LambdaQueryWrapper<UploadFile>()
                 .eq(UploadFile::getUserId, userId)
                 .eq(UploadFile::getFileKey, request.getFileKey()));
@@ -112,6 +122,20 @@ public class MaterialServiceImpl implements MaterialService {
                 .eq(UserMaterial::getUserId, userId).eq(UserMaterial::getMaterialId, materialId)) > 0) {
             throw BizException.unprocessable("已购买过该资料");
         }
+
+        pointsService.deduct(userId, m.getPrice(), "兑换资料：" + m.getTitle(), "material", m.getId());
+        pointsService.addIncome(m.getUserId(),
+                m.getPrice() - m.getPrice() * PLATFORM_FEE_PERCENT / 100,
+                "资料兑换收入：" + m.getTitle(), "material", m.getId());
+
+        UserMaterial um = new UserMaterial();
+        um.setUserId(userId);
+        um.setMaterialId(materialId);
+        userMaterialMapper.insert(um);
+
+        m.setSoldCount(m.getSoldCount() + 1);
+        materialMapper.updateById(m);
+
         TradeOrder order = new TradeOrder();
         order.setOrderNo("O" + System.currentTimeMillis());
         order.setUserId(userId);
@@ -119,20 +143,15 @@ public class MaterialServiceImpl implements MaterialService {
         order.setBizId(materialId);
         order.setTitle(m.getTitle());
         order.setAmount(m.getPrice());
-        order.setStatus(0);
+        order.setStatus(1);
         order.setOutTradeNo("MAT_" + materialId + "_" + UUID.randomUUID().toString().substring(0, 8));
+        order.setPaidAt(LocalDateTime.now());
         orderMapper.insert(order);
 
-        PayParamsVO payParams = new PayParamsVO();
-        payParams.setTimeStamp(String.valueOf(System.currentTimeMillis() / 1000));
-        payParams.setNonceStr(UUID.randomUUID().toString().replace("-", "").substring(0, 16));
-        payParams.setPackageValue("prepay_id=mock_" + order.getOutTradeNo());
-        payParams.setSignType("RSA");
-        payParams.setPaySign("mock_sign");
-
         Map<String, Object> data = new HashMap<>();
-        data.put("orderId", order.getOrderNo());
-        data.put("payParams", payParams);
+        data.put("orderId", order.getId());
+        data.put("success", true);
+        data.put("balance", pointsService.availableBalance(userId));
         return data;
     }
 
@@ -148,10 +167,16 @@ public class MaterialServiceImpl implements MaterialService {
         if (!owned && !m.getUserId().equals(userId)) {
             throw BizException.forbidden("请先购买");
         }
+        int expire = 600;
+        String url;
+        if (ossStorageService.isConfigured()) {
+            url = ossStorageService.presignedPrivateUrl(m.getFileKey(), expire);
+        } else {
+            url = "https://private-bucket.mock/" + m.getFileKey() + "?Expires=" + expire;
+        }
         Map<String, Object> data = new HashMap<>();
-        // TODO: OSS generatePresignedUrl
-        data.put("url", "https://private-bucket.mock/" + m.getFileKey() + "?Expires=600");
-        data.put("expiresIn", 600);
+        data.put("url", url);
+        data.put("expiresIn", expire);
         return data;
     }
 

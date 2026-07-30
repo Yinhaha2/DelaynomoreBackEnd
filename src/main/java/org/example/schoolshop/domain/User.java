@@ -22,6 +22,8 @@ public class User {
     private Integer status;
     private Integer walletBalance;
     private Integer walletFrozen;
+    private Integer level;
+    private Integer exp;
     private String bio;
     private LocalDateTime lastLoginAt;
     private LocalDateTime createdAt;

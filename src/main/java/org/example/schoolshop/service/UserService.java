@@ -1,6 +1,7 @@
 package org.example.schoolshop.service;
 
 import org.example.schoolshop.domain.User;
+import org.example.schoolshop.dto.req.RealNameVerifyRequest;
 import org.example.schoolshop.dto.req.UpdateProfileRequest;
 import org.example.schoolshop.dto.vo.UserHomeVO;
 import org.example.schoolshop.dto.vo.UserVO;
@@ -18,4 +19,6 @@ public interface UserService {
     UserHomeVO getUserHome(long targetUserId, Long currentUserId);
 
     Map<String, Boolean> toggleFollow(long followerId, long followeeId);
+
+    UserVO realNameVerify(long userId, RealNameVerifyRequest request);
 }

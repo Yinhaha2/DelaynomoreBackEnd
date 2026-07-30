@@ -31,6 +31,32 @@ schoolshop:
   jwt:
     secret: schoolshop-dev-jwt-secret-key-32bytes!!
     expire-hours: 168
+  wechat:
+    app-id: ""
+    app-secret: ""
+    mock-enabled: true
+  oss:
+    enabled: false
+    endpoint: ""
+    access-key-id: ""
+    access-key-secret: ""
+    public-bucket: ""
+    private-bucket: ""
+    public-base-url: ""
+  ai:
+    enabled: false
+    api-key: ""
+    base-url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+  admin:
+    token: ""
+  security:
+    content-check-mode: local
+    rate-limit-per-minute: 30
+  task-job:
+    enabled: true
+    auto-confirm-hours: 48
+    cancel-expired-recruiting: true
 
 logging:
   level:

@@ -24,6 +24,6 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     public Result<Void> handleOther(Exception e) {
-        return Result.fail(500, e.getMessage() != null ? e.getMessage() : "服务器错误");
+        return Result.fail(500, "服务器错误");
     }
 }
