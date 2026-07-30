@@ -5,7 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.schoolshop.common.Result;
 import org.example.schoolshop.common.UserContext;
 import org.example.schoolshop.dto.req.WithdrawRequest;
-import org.example.schoolshop.dto.vo.WalletVO;
+import org.example.schoolshop.dto.vo.PointsAccountVO;
 import org.example.schoolshop.service.WalletService;
 import org.springframework.web.bind.annotation.*;
 
@@ -19,7 +19,7 @@ public class WalletController {
     private final WalletService walletService;
 
     @GetMapping
-    public Result<WalletVO> wallet() {
+    public Result<PointsAccountVO> wallet() {
         return Result.ok(walletService.getWallet(UserContext.requireUserId()));
     }
 

@@ -11,6 +11,7 @@ public class OrderItemVO {
     private String type;
     private String title;
     private Integer amount;
+    private String unit;
     private String status;
     private LocalDateTime createdAt;
 }

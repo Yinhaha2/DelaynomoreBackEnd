@@ -22,6 +22,8 @@ public class Task {
     private String title;
     private String description;
     private String location;
+    private Long fromSpotId;
+    private Long toSpotId;
     private Integer rewardAmount;
     private Integer status;
     private String category;

@@ -11,6 +11,7 @@ import org.example.schoolshop.dto.req.CreatePostRequest;
 import org.example.schoolshop.dto.vo.CommentVO;
 import org.example.schoolshop.dto.vo.PostItemVO;
 import org.example.schoolshop.mapper.*;
+import org.example.schoolshop.service.ContentSecurityService;
 import org.example.schoolshop.service.PostService;
 import org.example.schoolshop.service.UserService;
 import org.example.schoolshop.util.VoAssembler;
@@ -33,6 +34,7 @@ public class PostServiceImpl implements PostService {
     private final UserMapper userMapper;
     private final ActivityNotificationMapper notificationMapper;
     private final UserService userService;
+    private final ContentSecurityService contentSecurityService;
 
     @Override
     public PageResult<PostItemVO> list(Integer page, Integer pageSize, String keyword,
@@ -82,6 +84,7 @@ public class PostServiceImpl implements PostService {
         if (!Boolean.TRUE.equals(user.getRealNameVerified())) {
             throw BizException.unprocessable("请先完成实名认证");
         }
+        contentSecurityService.checkText(request.getContent());
         Post post = new Post();
         post.setUserId(userId);
         post.setCategoryId(request.getCategoryId());
@@ -143,6 +146,7 @@ public class PostServiceImpl implements PostService {
     public CommentVO addComment(long userId, long postId, CommentRequest request) {
         userService.requireActiveUser(userId);
         Post post = getPublishedPost(postId);
+        contentSecurityService.checkText(request.getContent());
         PostComment c = new PostComment();
         c.setPostId(postId);
         c.setUserId(userId);

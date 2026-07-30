@@ -17,11 +17,17 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     private static final Set<String> WHITE_LIST = Set.of(
             "POST:/api/auth/wx-login",
-            "POST:/api/pay/notify/wechat",
             "GET:/api/posts",
             "GET:/api/tasks",
             "GET:/api/materials",
-            "GET:/api/health"
+            "GET:/api/health",
+            "GET:/api/rankings",
+            "GET:/api/campus/spots",
+            "GET:/api/campus/map/tasks",
+            "GET:/api/campus/events",
+            "GET:/api/partners",
+            "GET:/api/courses",
+            "GET:/api/search/hot"
     );
 
     private final JwtUtil jwtUtil;
@@ -60,7 +66,9 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         return path.matches("/api/posts/\\d+")
                 || path.matches("/api/tasks/\\d+")
-                || path.matches("/api/materials/\\d+");
+                || path.matches("/api/materials/\\d+")
+                || path.matches("/api/campus/spots/\\d+")
+                || path.matches("/api/courses/\\d+");
     }
 
     private String normalizePath(HttpServletRequest request) {

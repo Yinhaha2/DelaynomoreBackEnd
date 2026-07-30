@@ -47,7 +47,7 @@ public class HealthController {
             demoUser.put("walletBalance", demo.getWalletBalance());
             data.put("demoUser", demoUser);
         }
-        data.put("status", "ok");
+        data.put("status", "UP");
         return Result.ok(data);
     }
 }
