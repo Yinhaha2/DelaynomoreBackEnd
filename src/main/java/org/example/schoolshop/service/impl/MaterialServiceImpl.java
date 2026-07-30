@@ -12,6 +12,7 @@ import org.example.schoolshop.domain.User;
 import org.example.schoolshop.domain.UserMaterial;
 import org.example.schoolshop.dto.req.PublishMaterialRequest;
 import org.example.schoolshop.dto.vo.MaterialItemVO;
+import org.example.schoolshop.integration.oss.OssStorageService;
 import org.example.schoolshop.mapper.*;
 import org.example.schoolshop.service.ContentSecurityService;
 import org.example.schoolshop.service.MaterialService;
@@ -42,6 +43,7 @@ public class MaterialServiceImpl implements MaterialService {
     private final UserService userService;
     private final PointsService pointsService;
     private final ContentSecurityService contentSecurityService;
+    private final OssStorageService ossStorageService;
 
     @Override
     public PageResult<MaterialItemVO> list(Integer page, Integer pageSize, String sortBy, String category,
@@ -165,9 +167,16 @@ public class MaterialServiceImpl implements MaterialService {
         if (!owned && !m.getUserId().equals(userId)) {
             throw BizException.forbidden("请先购买");
         }
+        int expire = 600;
+        String url;
+        if (ossStorageService.isConfigured()) {
+            url = ossStorageService.presignedPrivateUrl(m.getFileKey(), expire);
+        } else {
+            url = "https://private-bucket.mock/" + m.getFileKey() + "?Expires=" + expire;
+        }
         Map<String, Object> data = new HashMap<>();
-        data.put("url", "https://private-bucket.mock/" + m.getFileKey() + "?Expires=600");
-        data.put("expiresIn", 600);
+        data.put("url", url);
+        data.put("expiresIn", expire);
         return data;
     }
 

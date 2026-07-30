@@ -4,6 +4,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.example.schoolshop.common.Result;
 import org.example.schoolshop.common.UserContext;
+import org.example.schoolshop.dto.req.RealNameVerifyRequest;
 import org.example.schoolshop.dto.req.UpdateProfileRequest;
 import org.example.schoolshop.dto.vo.UserHomeVO;
 import org.example.schoolshop.dto.vo.UserVO;
@@ -26,6 +27,11 @@ public class UserController {
     @PutMapping("/api/user/profile")
     public Result<UserVO> updateProfile(@Valid @RequestBody UpdateProfileRequest request) {
         return Result.ok(userService.updateProfile(UserContext.requireUserId(), request));
+    }
+
+    @PostMapping("/api/user/real-name-verify")
+    public Result<UserVO> realNameVerify(@Valid @RequestBody RealNameVerifyRequest request) {
+        return Result.ok(userService.realNameVerify(UserContext.requireUserId(), request));
     }
 
     @GetMapping("/api/users/{userId}/home")

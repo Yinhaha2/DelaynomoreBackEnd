@@ -1,5 +1,44 @@
-# 复制本文件为 application-local.yml（已加入 .gitignore），填写本机 MySQL 密码
+# 本地私密配置模板（勿提交 Git）
+# 用法：复制为 application-local.yml，按 docs/CONFIG.md 逐项填写
+
 spring:
   datasource:
     username: root
-    password: ......
+    password: ""
+
+schoolshop:
+  jwt:
+    secret: ""          # 至少 32 字符，生产务必更换
+    expire-hours: 168
+
+  wechat:
+    app-id: ""          # 微信公众平台 → 开发 → 开发管理 → 开发设置
+    app-secret: ""
+    mock-enabled: true  # 未填微信时是否允许 mock 登录（开发 true，生产 false）
+
+  oss:
+    enabled: false
+    endpoint: ""        # 如 oss-cn-hangzhou.aliyuncs.com
+    access-key-id: ""
+    access-key-secret: ""
+    public-bucket: ""
+    private-bucket: ""
+    public-base-url: "" # 如 https://your-bucket.oss-cn-hangzhou.aliyuncs.com
+
+  ai:
+    enabled: false
+    api-key: ""         # OpenAI 或兼容服务 API Key
+    base-url: "https://api.openai.com/v1"
+    model: "gpt-4o-mini"
+
+  admin:
+    token: ""           # 管理端请求头 X-Admin-Token
+
+  security:
+    content-check-mode: local   # local | wechat
+    rate-limit-per-minute: 30
+
+  task-job:
+    enabled: true
+    auto-confirm-hours: 48
+    cancel-expired-recruiting: true

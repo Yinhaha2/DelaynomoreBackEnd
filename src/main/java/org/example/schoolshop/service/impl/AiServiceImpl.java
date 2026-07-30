@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.schoolshop.domain.*;
 import org.example.schoolshop.dto.req.AiChatRequest;
 import org.example.schoolshop.dto.req.FeedFeedbackRequest;
+import org.example.schoolshop.integration.ai.LlmClient;
 import org.example.schoolshop.mapper.*;
 import org.example.schoolshop.service.AiService;
 import org.example.schoolshop.service.ContentSecurityService;
@@ -32,6 +33,7 @@ public class AiServiceImpl implements AiService {
     private final FeedFeedbackMapper feedbackMapper;
     private final UserService userService;
     private final ContentSecurityService contentSecurityService;
+    private final LlmClient llmClient;
 
     @Override
     public Map<String, Object> weekSchedule(long userId) {
@@ -82,24 +84,16 @@ public class AiServiceImpl implements AiService {
         userService.requireActiveUser(userId);
         String message = request.getMessage() != null ? request.getMessage().trim() : "";
         contentSecurityService.checkText(message);
-        String reply;
-        if (message.contains("课") || message.contains("今天")) {
-            Map<String, Object> today = todaySchedule(userId);
-            @SuppressWarnings("unchecked")
-            List<Map<String, Object>> courses = (List<Map<String, Object>>) today.get("courses");
-            if (courses == null || courses.isEmpty()) {
-                reply = "今天没有安排课程，可以去图书馆自习或看看校园悬赏～";
-            } else {
-                reply = "今天有 " + courses.size() + " 节课：" + courses.stream()
-                        .map(c -> c.get("name") + "（" + c.get("start") + "-" + c.get("end") + "）")
-                        .collect(Collectors.joining("；"));
+        String reply = null;
+        if (llmClient.isConfigured()) {
+            String system = "你是校园学习助手，回答简洁友好，不涉及政治敏感与违法内容，不承诺提现或人民币。";
+            reply = llmClient.chat(system, message);
+            if (reply != null) {
+                contentSecurityService.checkText(reply);
             }
-        } else if (message.contains("积分")) {
-            reply = "赚积分方式：每日签到、完成代办悬赏、上架资料、课程评价等。积分可在资料集市兑换学习资料。";
-        } else if (message.contains("搭子")) {
-            reply = "可以在「找搭子」发布自习/干饭/运动组队，也可以看看首页智能推荐～";
-        } else {
-            reply = "我是校园 AI 助手，可以问我今天有什么课、怎么赚积分、找搭子建议等。";
+        }
+        if (reply == null || reply.isBlank()) {
+            reply = ruleBasedReply(userId, message);
         }
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("id", System.currentTimeMillis());
@@ -189,5 +183,26 @@ public class AiServiceImpl implements AiService {
         item.put("cover", "");
         item.put("meta", meta);
         return item;
+    }
+
+    private String ruleBasedReply(long userId, String message) {
+        if (message.contains("课") || message.contains("今天")) {
+            Map<String, Object> today = todaySchedule(userId);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> courses = (List<Map<String, Object>>) today.get("courses");
+            if (courses == null || courses.isEmpty()) {
+                return "今天没有安排课程，可以去图书馆自习或看看校园悬赏～";
+            }
+            return "今天有 " + courses.size() + " 节课：" + courses.stream()
+                    .map(c -> c.get("name") + "（" + c.get("start") + "-" + c.get("end") + "）")
+                    .collect(Collectors.joining("；"));
+        }
+        if (message.contains("积分")) {
+            return "赚积分方式：每日签到、完成代办悬赏、上架资料、课程评价等。积分可在资料集市兑换学习资料。";
+        }
+        if (message.contains("搭子")) {
+            return "可以在「找搭子」发布自习/干饭/运动组队，也可以看看首页智能推荐～";
+        }
+        return "我是校园 AI 助手，可以问我今天有什么课、怎么赚积分、找搭子建议等。";
     }
 }

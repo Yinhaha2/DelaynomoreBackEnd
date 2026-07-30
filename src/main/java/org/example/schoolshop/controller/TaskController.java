@@ -63,6 +63,11 @@ public class TaskController {
         return Result.ok(taskService.confirm(UserContext.requireUserId(), id));
     }
 
+    @PostMapping("/{id}/cancel")
+    public Result<Map<String, Object>> cancel(@PathVariable Long id) {
+        return Result.ok(taskService.cancel(UserContext.requireUserId(), id));
+    }
+
     @GetMapping("/my/{type}")
     public Result<PageResult<TaskItemVO>> my(
             @PathVariable String type,

@@ -3,6 +3,7 @@ package org.example.schoolshop.controller;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import lombok.RequiredArgsConstructor;
 import org.example.schoolshop.common.Result;
+import org.example.schoolshop.config.SchoolShopProperties;
 import org.example.schoolshop.domain.User;
 import org.example.schoolshop.mapper.UserMapper;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,6 +22,7 @@ public class HealthController {
 
     private final DataSource dataSource;
     private final UserMapper userMapper;
+    private final SchoolShopProperties properties;
 
     /**
      * 连通性检查：数据源 + 查询 init.sql 初始用户
@@ -48,6 +50,12 @@ public class HealthController {
             data.put("demoUser", demoUser);
         }
         data.put("status", "UP");
+        Map<String, Boolean> integrations = new LinkedHashMap<>();
+        integrations.put("wechat", properties.isWechatConfigured());
+        integrations.put("oss", properties.isOssConfigured());
+        integrations.put("ai", properties.isAiConfigured());
+        integrations.put("admin", properties.isAdminConfigured());
+        data.put("integrations", integrations);
         return Result.ok(data);
     }
 }

@@ -7,6 +7,7 @@ import lombok.RequiredArgsConstructor;
 import org.example.schoolshop.common.BizException;
 import org.example.schoolshop.common.CategoryConstants;
 import org.example.schoolshop.common.PageResult;
+import org.example.schoolshop.config.SchoolShopProperties;
 import org.example.schoolshop.domain.Task;
 import org.example.schoolshop.domain.TradeOrder;
 import org.example.schoolshop.domain.User;
@@ -43,6 +44,7 @@ public class TaskServiceImpl implements TaskService {
     private final UserService userService;
     private final PointsService pointsService;
     private final ContentSecurityService contentSecurityService;
+    private final SchoolShopProperties properties;
 
     @Override
     public PageResult<TaskItemVO> list(Integer page, Integer pageSize, Integer status, String category,
@@ -219,6 +221,61 @@ public class TaskServiceImpl implements TaskService {
         qw.orderByDesc(Task::getCreatedAt);
         Page<Task> pageData = taskMapper.selectPage(new Page<>(p, ps), qw);
         return PageResult.of(pageData.convert(this::toItem));
+    }
+
+    @Override
+    @Transactional
+    public Map<String, Object> cancel(long userId, long taskId) {
+        Task task = taskMapper.selectById(taskId);
+        if (task == null || !task.getPublisherId().equals(userId)) {
+            throw BizException.forbidden("无权取消");
+        }
+        if (task.getStatus() != 0 && task.getStatus() != 1) {
+            throw BizException.badRequest("当前状态不可取消");
+        }
+        task.setStatus(5);
+        taskMapper.updateById(task);
+        pointsService.unfreeze(userId, task.getRewardAmount(), "悬赏取消退回：" + task.getTitle());
+        Map<String, Object> data = new HashMap<>();
+        data.put("status", 5);
+        return data;
+    }
+
+    @Override
+    @Transactional
+    public int autoConfirmExpiredTasks() {
+        LocalDateTime threshold = LocalDateTime.now()
+                .minusHours(properties.getTaskJob().getAutoConfirmHours());
+        List<Task> tasks = taskMapper.selectList(new LambdaQueryWrapper<Task>()
+                .eq(Task::getStatus, 3)
+                .lt(Task::getDeliveredAt, threshold));
+        int count = 0;
+        for (Task task : tasks) {
+            try {
+                confirm(task.getPublisherId(), task.getId());
+                count++;
+            } catch (Exception ignored) {
+                // skip conflict
+            }
+        }
+        return count;
+    }
+
+    @Override
+    @Transactional
+    public int cancelExpiredRecruitingTasks() {
+        List<Task> tasks = taskMapper.selectList(new LambdaQueryWrapper<Task>()
+                .eq(Task::getStatus, 1)
+                .lt(Task::getDeadline, LocalDateTime.now()));
+        int count = 0;
+        for (Task task : tasks) {
+            try {
+                cancel(task.getPublisherId(), task.getId());
+                count++;
+            } catch (Exception ignored) {
+            }
+        }
+        return count;
     }
 
     private TaskItemVO toItem(Task task) {
