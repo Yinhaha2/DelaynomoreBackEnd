@@ -152,6 +152,9 @@ public class MaterialServiceImpl implements MaterialService {
         data.put("orderId", order.getId());
         data.put("success", true);
         data.put("balance", pointsService.availableBalance(userId));
+        Map<String, Object> payParams = new HashMap<>();
+        payParams.put("mock", true);
+        data.put("payParams", payParams);
         return data;
     }
 

@@ -13,7 +13,6 @@ import org.example.schoolshop.domain.TradeOrder;
 import org.example.schoolshop.domain.User;
 import org.example.schoolshop.dto.req.CreateTaskRequest;
 import org.example.schoolshop.dto.req.DeliverTaskRequest;
-import org.example.schoolshop.dto.vo.PayParamsVO;
 import org.example.schoolshop.dto.vo.TaskItemVO;
 import org.example.schoolshop.mapper.TaskMapper;
 import org.example.schoolshop.mapper.TradeOrderMapper;
@@ -113,8 +112,8 @@ public class TaskServiceImpl implements TaskService {
         task.setVersion(0);
         taskMapper.insert(task);
 
-        pointsService.freeze(userId, request.getRewardAmount(),
-                "发布悬赏冻结：" + request.getTitle(), "task", task.getId());
+        pointsService.deduct(userId, request.getRewardAmount(),
+                "发布悬赏：" + request.getTitle(), "task", task.getId());
 
         TradeOrder order = new TradeOrder();
         order.setOrderNo("O" + System.currentTimeMillis());
@@ -136,14 +135,16 @@ public class TaskServiceImpl implements TaskService {
     }
 
     @Override
-    public PayParamsVO pay(long userId, long taskId) {
+    public Map<String, Object> pay(long userId, long taskId) {
         Task task = taskMapper.selectById(taskId);
         if (task == null || !task.getPublisherId().equals(userId)) {
             throw BizException.badRequest("任务状态不允许支付");
         }
-        PayParamsVO vo = new PayParamsVO();
-        vo.setPackageValue("mock");
-        return vo;
+        Map<String, Object> payParams = new HashMap<>();
+        payParams.put("mock", true);
+        Map<String, Object> data = new HashMap<>();
+        data.put("payParams", payParams);
+        return data;
     }
 
     @Override
@@ -235,7 +236,8 @@ public class TaskServiceImpl implements TaskService {
         }
         task.setStatus(5);
         taskMapper.updateById(task);
-        pointsService.unfreeze(userId, task.getRewardAmount(), "悬赏取消退回：" + task.getTitle());
+        pointsService.addIncome(userId, task.getRewardAmount(),
+                "悬赏取消退回：" + task.getTitle(), "task", taskId);
         Map<String, Object> data = new HashMap<>();
         data.put("status", 5);
         return data;

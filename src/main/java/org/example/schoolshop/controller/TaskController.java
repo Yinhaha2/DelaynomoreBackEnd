@@ -7,7 +7,6 @@ import org.example.schoolshop.common.Result;
 import org.example.schoolshop.common.UserContext;
 import org.example.schoolshop.dto.req.CreateTaskRequest;
 import org.example.schoolshop.dto.req.DeliverTaskRequest;
-import org.example.schoolshop.dto.vo.PayParamsVO;
 import org.example.schoolshop.dto.vo.TaskItemVO;
 import org.example.schoolshop.service.TaskService;
 import org.springframework.web.bind.annotation.*;
@@ -43,7 +42,7 @@ public class TaskController {
     }
 
     @PostMapping("/{id}/pay")
-    public Result<PayParamsVO> pay(@PathVariable Long id) {
+    public Result<Map<String, Object>> pay(@PathVariable Long id) {
         return Result.ok(taskService.pay(UserContext.requireUserId(), id));
     }
 

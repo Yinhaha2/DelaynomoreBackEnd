@@ -153,10 +153,6 @@ public class PointsServiceImpl implements PointsService {
     public void settleTaskReward(long publisherId, long acceptorId, int rewardAmount, long taskId) {
         int fee = rewardAmount * PLATFORM_FEE_PERCENT / 100;
         int net = rewardAmount - fee;
-        int rows = userMapper.settleFrozen(publisherId, rewardAmount);
-        if (rows == 0) {
-            throw BizException.badRequest("结算失败");
-        }
         userMapper.addPoints(acceptorId, net);
         insertRecord(acceptorId, "income", net, "代办悬赏收入", "task", taskId);
         addExp(acceptorId, 10);

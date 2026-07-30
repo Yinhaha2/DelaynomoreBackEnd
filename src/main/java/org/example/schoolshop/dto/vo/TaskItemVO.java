@@ -19,6 +19,8 @@ public class TaskItemVO {
     private UserBriefVO acceptor;
     private String deliveryNote;
     private List<String> deliveryImages;
+    private Long fromSpotId;
+    private Long toSpotId;
     private LocalDateTime createdAt;
     private LocalDateTime deadline;
 }

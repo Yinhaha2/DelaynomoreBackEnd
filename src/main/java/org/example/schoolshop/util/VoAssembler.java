@@ -63,6 +63,8 @@ public final class VoAssembler {
         vo.setTitle(task.getTitle());
         vo.setDescription(task.getDescription());
         vo.setLocation(task.getLocation());
+        vo.setFromSpotId(task.getFromSpotId());
+        vo.setToSpotId(task.getToSpotId());
         vo.setRewardAmount(task.getRewardAmount());
         vo.setStatus(task.getStatus());
         vo.setCategory(task.getCategory());
