@@ -14,15 +14,16 @@ build/
 dist/
 *.class
 
-# Python
+# Python (legacy)
 __pycache__/
 *.py[cod]
-*.egg-info/
 .venv/
 venv/
 .pytest_cache/
-.mypy_cache/
-.ruff_cache/
+
+# Java / Maven
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
 
 # Local config
 .env
