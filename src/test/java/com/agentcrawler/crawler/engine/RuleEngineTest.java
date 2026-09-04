@@ -25,7 +25,7 @@ class RuleEngineTest {
     void setUp() throws IOException {
         server = new MockWebServer();
         server.start();
-        ruleEngine = new RuleEngine(new SiteHttpClient(5), new XPathRuleStrategy());
+        ruleEngine = new RuleEngine(new SiteHttpClient(5), new XPathRuleStrategy(), new ApiRuleStrategy());
     }
 
     @AfterEach

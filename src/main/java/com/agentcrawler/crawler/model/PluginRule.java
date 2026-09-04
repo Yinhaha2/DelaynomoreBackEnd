@@ -19,6 +19,8 @@ public class PluginRule {
     private boolean usePost = false;
     private String searchMode = "xpath";
     private String chapterMode = "xpath";
+    private ApiSearchConfig searchApiConfig = new ApiSearchConfig();
+    private ApiChapterConfig chapterApiConfig = new ApiChapterConfig();
 
     public String getName() {
         return name;
@@ -132,5 +134,29 @@ public class PluginRule {
 
     public void setChapterMode(String chapterMode) {
         this.chapterMode = chapterMode;
+    }
+
+    public ApiSearchConfig getSearchApiConfig() {
+        return searchApiConfig;
+    }
+
+    public void setSearchApiConfig(ApiSearchConfig searchApiConfig) {
+        this.searchApiConfig = searchApiConfig == null ? new ApiSearchConfig() : searchApiConfig;
+    }
+
+    public ApiChapterConfig getChapterApiConfig() {
+        return chapterApiConfig;
+    }
+
+    public void setChapterApiConfig(ApiChapterConfig chapterApiConfig) {
+        this.chapterApiConfig = chapterApiConfig == null ? new ApiChapterConfig() : chapterApiConfig;
+    }
+
+    public boolean isSearchApiMode() {
+        return RuleMode.isApi(searchMode);
+    }
+
+    public boolean isChapterApiMode() {
+        return RuleMode.isApi(chapterMode);
     }
 }

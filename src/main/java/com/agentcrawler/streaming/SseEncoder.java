@@ -61,6 +61,23 @@ public final class SseEncoder {
         return chunk(payload);
     }
 
+    public static String video(String url, String title, String format, String sourcePage, String roadName) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "video");
+        payload.put("url", url);
+        payload.put("title", title);
+        if (format != null && !format.isBlank()) {
+            payload.put("format", format);
+        }
+        if (sourcePage != null && !sourcePage.isBlank()) {
+            payload.put("source_page", sourcePage);
+        }
+        if (roadName != null && !roadName.isBlank()) {
+            payload.put("road_name", roadName);
+        }
+        return chunk(payload);
+    }
+
     private static String encode(SseEventName event, Map<String, Object> payload) {
         try {
             return "event: " + event.value() + "\n" + "data: " + MAPPER.writeValueAsString(payload) + "\n\n";

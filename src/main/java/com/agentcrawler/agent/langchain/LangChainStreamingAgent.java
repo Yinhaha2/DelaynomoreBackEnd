@@ -147,7 +147,13 @@ public class LangChainStreamingAgent implements AgentHandler {
         if (!result.videos().isEmpty()) {
             emitter.text("视频资源（" + result.videos().size() + "）:\n");
             for (CrawlResourceResult.VideoResource video : result.videos()) {
-                emitter.link(video.url(), video.title(), video.roadName() + " | " + video.sourcePage());
+                emitter.video(
+                        video.url(),
+                        video.title(),
+                        detectVideoFormat(video.url()),
+                        video.sourcePage(),
+                        video.roadName()
+                );
                 emitter.text("- " + video.title() + " => " + video.url() + "\n");
             }
             emitter.text("\n");
@@ -176,6 +182,17 @@ public class LangChainStreamingAgent implements AgentHandler {
     private boolean hasOpenAiKey() {
         String apiKey = properties.openai().apiKey();
         return apiKey != null && !apiKey.isBlank();
+    }
+
+    private static String detectVideoFormat(String url) {
+        String lower = url.toLowerCase();
+        if (lower.contains(".m3u8")) {
+            return "m3u8";
+        }
+        if (lower.contains(".mp4")) {
+            return "mp4";
+        }
+        return "unknown";
     }
 
     interface StreamingAssistant {

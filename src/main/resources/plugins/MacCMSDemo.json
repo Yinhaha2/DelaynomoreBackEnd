@@ -1,0 +1,28 @@
+{
+  "name": "MacCMSDemo",
+  "baseURL": "https://example-cms.test/",
+  "searchMode": "api",
+  "chapterMode": "api",
+  "searchApiConfig": {
+    "request": {
+      "method": "GET",
+      "url": "https://example-cms.test/api.php/provide/vod/?ac=detail&wd=@keyword"
+    },
+    "listPath": "$.list[*]",
+    "namePath": "$.vod_name",
+    "sourcePath": "$.vod_id",
+    "imagePath": "$.vod_pic"
+  },
+  "chapterApiConfig": {
+    "request": {
+      "method": "GET",
+      "url": "https://example-cms.test/api.php/provide/vod/?ac=detail&ids=@source"
+    },
+    "format": "delimited",
+    "roadNamesPath": "$.list[0].vod_play_from",
+    "roadEpisodesPath": "$.list[0].vod_play_url",
+    "roadSeparator": "$$$",
+    "episodeSeparator": "#",
+    "fieldSeparator": "$"
+  }
+}

@@ -34,6 +34,10 @@ public class StreamEmitter {
         frameConsumer.accept(SseEncoder.image(url, alt));
     }
 
+    public void video(String url, String title, String format, String sourcePage, String roadName) {
+        frameConsumer.accept(SseEncoder.video(url, title, format, sourcePage, roadName));
+    }
+
     public void done(String messageId, String conversationId) {
         frameConsumer.accept(SseEncoder.done(messageId, conversationId));
     }
