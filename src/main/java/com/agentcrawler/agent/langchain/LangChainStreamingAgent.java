@@ -6,9 +6,10 @@ import com.agentcrawler.agent.session.SessionContextHolder;
 import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
-import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.agentcrawler.crawler.service.ResourceCrawlerService;
+import com.agentcrawler.model.ChatAttachment;
 import com.agentcrawler.streaming.StreamEmitter;
+import com.agentcrawler.vision.ImageUploadService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
@@ -25,29 +26,39 @@ import java.util.concurrent.atomic.AtomicReference;
 @Component
 public class LangChainStreamingAgent implements AgentHandler {
     private static final Set<String> CRAWL_TOOL_NAMES = Set.of("searchResources", "crawlResources");
+    private static final Set<String> VISION_TOOL_NAMES = Set.of("analyzeAnimeImage");
 
     private final ResourceCrawlerService crawlerService;
     private final ObjectMapper objectMapper;
     private final ObjectProvider<AnimeAgent> animeAgentProvider;
     private final SessionBlackboardService blackboardService;
+    private final ImageUploadService imageUploadService;
 
     public LangChainStreamingAgent(
             ResourceCrawlerService crawlerService,
             ObjectMapper objectMapper,
             ObjectProvider<AnimeAgent> animeAgentProvider,
-            SessionBlackboardService blackboardService
+            SessionBlackboardService blackboardService,
+            ImageUploadService imageUploadService
     ) {
         this.crawlerService = crawlerService;
         this.objectMapper = objectMapper;
         this.animeAgentProvider = animeAgentProvider;
         this.blackboardService = blackboardService;
+        this.imageUploadService = imageUploadService;
     }
 
     @Override
-    public void streamReply(String conversationId, String userMessage, String messageId, StreamEmitter emitter) {
+    public void streamReply(
+            String conversationId,
+            String userMessage,
+            List<ChatAttachment> attachments,
+            String messageId,
+            StreamEmitter emitter
+    ) {
         AnimeAgent animeAgent = animeAgentProvider.getIfAvailable();
         if (animeAgent != null) {
-            streamWithAgent(animeAgent, conversationId, userMessage, messageId, emitter);
+            streamWithAgent(animeAgent, conversationId, userMessage, attachments, messageId, emitter);
             return;
         }
         streamWithHeuristic(conversationId, userMessage, messageId, emitter);
@@ -57,6 +68,7 @@ public class LangChainStreamingAgent implements AgentHandler {
             AnimeAgent animeAgent,
             String conversationId,
             String userMessage,
+            List<ChatAttachment> attachments,
             String messageId,
             StreamEmitter emitter
     ) {
@@ -65,16 +77,20 @@ public class LangChainStreamingAgent implements AgentHandler {
         AtomicBoolean failed = new AtomicBoolean(false);
 
         blackboardService.onUserMessage(conversationId, userMessage);
-        String anchoredMessage = prependAnchor(conversationId, userMessage);
+        String enrichedMessage = AttachmentMessageEnricher.enrich(userMessage, attachments, imageUploadService);
+        String anchoredMessage = prependAnchor(conversationId, enrichedMessage);
 
         SessionContextHolder.set(conversationId);
         try {
             animeAgent.chat(conversationId, anchoredMessage)
                     .onNext(emitter::text)
                     .onToolExecuted(toolExecution -> {
-                        if (CRAWL_TOOL_NAMES.contains(toolExecution.request().name())) {
+                        String toolName = toolExecution.request().name();
+                        if (CRAWL_TOOL_NAMES.contains(toolName)) {
                             CrawlResultEmitter.emitFromJson(toolExecution.result(), emitter, objectMapper);
                             syncBlackboardFromCrawl(conversationId, toolExecution.result());
+                        } else if (VISION_TOOL_NAMES.contains(toolName)) {
+                            emitter.text("\n[视觉识别完成]\n");
                         }
                     })
                     .onComplete(response -> latch.countDown())

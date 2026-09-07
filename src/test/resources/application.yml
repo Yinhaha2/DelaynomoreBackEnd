@@ -8,3 +8,11 @@ agent:
   llm:
     api-key: ""
     memory-max-messages: 4
+  vision:
+    model: deepseek-v4-flash-vision-exp
+    detail: original
+    min-confidence-to-lock: 0.7
+  upload:
+    storage-dir: ./target/test-uploads
+    public-base-url: http://localhost:8000
+    max-size-bytes: 33554432

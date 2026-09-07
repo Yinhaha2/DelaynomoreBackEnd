@@ -22,6 +22,11 @@ public interface AnimeAgent {
             3. 用户明确说「换一部」「换个话题」时，先调用 clearSessionContext，再开始新检索。
             4. 粉发吉他少女等易混淆角色：结合发型（长直/及肩）、服装（运动服/羽丘制服）区分《孤独摇滚》后藤一里与 MyGO 千早爱音，禁止张冠李戴。
 
+            【视觉感知 Tool】：
+            1. 当用户附带图片 URL，或询问「这张图是哪部番/哪一集/是谁」时，必须先调用 analyzeAnimeImage(imageUrl)。
+            2. 主 Agent 只调度 URL 字符串，绝不处理 base64；imageUrl 使用系统提供的 http://.../api/v1/files/images/... 地址。
+            3. analyzeAnimeImage 返回结构化 JSON（作品名/角色/集数线索/置信度），识别成功后会自动锁定实体黑板；随后再调用 searchResources 检索资源。
+
             【输出格式规范】：
             1. 如果工具返回了有效资源，必须以清晰规整的 Markdown 列表呈现，包含：资源标题、画质说明、可点击的跳转链接。
             2. 在给出链接之后，附上 1~2 句你对该作品的简短推荐语或观影顺序建议。

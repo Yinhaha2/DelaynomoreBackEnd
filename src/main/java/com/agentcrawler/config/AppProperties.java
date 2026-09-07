@@ -7,7 +7,9 @@ public record AppProperties(
         String handler,
         int textChunkMaxChars,
         Crawler crawler,
-        Llm llm
+        Llm llm,
+        Vision vision,
+        Upload upload
 ) {
     public record Crawler(
             int maxSearchResults,
@@ -20,5 +22,17 @@ public record AppProperties(
             String baseUrl,
             String model,
             int memoryMaxMessages
+    ) {}
+
+    public record Vision(
+            String model,
+            String detail,
+            double minConfidenceToLock
+    ) {}
+
+    public record Upload(
+            String storageDir,
+            String publicBaseUrl,
+            long maxSizeBytes
     ) {}
 }
