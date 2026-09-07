@@ -1,0 +1,10 @@
+agent:
+  handler: langchain
+  text-chunk-max-chars: 512
+  crawler:
+    max-search-results: 3
+    max-episodes-per-road: 5
+    request-timeout-seconds: 5
+  llm:
+    api-key: ""
+    memory-max-messages: 10

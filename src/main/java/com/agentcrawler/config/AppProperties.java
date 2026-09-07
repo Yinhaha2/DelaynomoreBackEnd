@@ -7,7 +7,7 @@ public record AppProperties(
         String handler,
         int textChunkMaxChars,
         Crawler crawler,
-        OpenAi openai
+        Llm llm
 ) {
     public record Crawler(
             int maxSearchResults,
@@ -15,9 +15,10 @@ public record AppProperties(
             int requestTimeoutSeconds
     ) {}
 
-    public record OpenAi(
+    public record Llm(
             String apiKey,
             String baseUrl,
-            String model
+            String model,
+            int memoryMaxMessages
     ) {}
 }
