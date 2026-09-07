@@ -86,4 +86,21 @@ class ApiIntegrationTest {
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"image\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: done")));
     }
+
+    @Test
+    void streamChatReturnsTitleWhenNeedTitle() throws Exception {
+        MvcResult mvcResult = mockMvc.perform(post("/api/v1/chat/stream")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .accept(MediaType.TEXT_EVENT_STREAM)
+                        .content("""
+                                {"message":"帮我找《葬送的芙莉莲》的播放资源","need_title":true}
+                                """))
+                .andExpect(request().asyncStarted())
+                .andReturn();
+
+        mockMvc.perform(asyncDispatch(mvcResult))
+                .andExpect(status().isOk())
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("event: done")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"title\":")));
+    }
 }

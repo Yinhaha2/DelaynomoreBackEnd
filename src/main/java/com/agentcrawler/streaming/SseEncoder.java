@@ -18,10 +18,17 @@ public final class SseEncoder {
     }
 
     public static String done(String messageId, String conversationId) {
+        return done(messageId, conversationId, null);
+    }
+
+    public static String done(String messageId, String conversationId, String title) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "done");
         payload.put("message_id", messageId);
         payload.put("conversation_id", conversationId);
+        if (title != null && !title.isBlank()) {
+            payload.put("title", title);
+        }
         return encode(SseEventName.DONE, payload);
     }
 

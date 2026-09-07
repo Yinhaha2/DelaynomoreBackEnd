@@ -39,7 +39,11 @@ public class StreamEmitter {
     }
 
     public void done(String messageId, String conversationId) {
-        frameConsumer.accept(SseEncoder.done(messageId, conversationId));
+        done(messageId, conversationId, null);
+    }
+
+    public void done(String messageId, String conversationId, String title) {
+        frameConsumer.accept(SseEncoder.done(messageId, conversationId, title));
     }
 
     public void error(ErrorCode code, String message) {

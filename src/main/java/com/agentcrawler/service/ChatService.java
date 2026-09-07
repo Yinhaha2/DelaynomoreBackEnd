@@ -64,7 +64,14 @@ public class ChatService {
         StreamEmitter streamEmitter = new StreamEmitter(properties.textChunkMaxChars(), frameConsumer);
 
         try {
-            agentHandler.streamReply(conversationId, message, attachments, messageId, streamEmitter);
+            agentHandler.streamReply(
+                    conversationId,
+                    message,
+                    attachments,
+                    request.requestsTitle(),
+                    messageId,
+                    streamEmitter
+            );
         } catch (AppException ex) {
             frameConsumer.accept(com.agentcrawler.streaming.SseEncoder.error(ex.getCode().name(), ex.getMessage()));
         } catch (Exception ex) {

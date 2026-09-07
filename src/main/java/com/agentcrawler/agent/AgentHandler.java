@@ -10,6 +10,7 @@ public interface AgentHandler {
             String conversationId,
             String userMessage,
             List<ChatAttachment> attachments,
+            boolean needTitle,
             String messageId,
             StreamEmitter emitter
     );
