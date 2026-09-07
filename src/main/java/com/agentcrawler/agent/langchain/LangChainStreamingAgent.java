@@ -1,6 +1,9 @@
 package com.agentcrawler.agent.langchain;
 
 import com.agentcrawler.agent.AgentHandler;
+import com.agentcrawler.agent.session.SessionBlackboardService;
+import com.agentcrawler.agent.session.SessionContextHolder;
+import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
 import com.agentcrawler.crawler.model.CrawlResourceResult;
@@ -10,6 +13,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -24,15 +29,18 @@ public class LangChainStreamingAgent implements AgentHandler {
     private final ResourceCrawlerService crawlerService;
     private final ObjectMapper objectMapper;
     private final ObjectProvider<AnimeAgent> animeAgentProvider;
+    private final SessionBlackboardService blackboardService;
 
     public LangChainStreamingAgent(
             ResourceCrawlerService crawlerService,
             ObjectMapper objectMapper,
-            ObjectProvider<AnimeAgent> animeAgentProvider
+            ObjectProvider<AnimeAgent> animeAgentProvider,
+            SessionBlackboardService blackboardService
     ) {
         this.crawlerService = crawlerService;
         this.objectMapper = objectMapper;
         this.animeAgentProvider = animeAgentProvider;
+        this.blackboardService = blackboardService;
     }
 
     @Override
@@ -56,22 +64,51 @@ public class LangChainStreamingAgent implements AgentHandler {
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicBoolean failed = new AtomicBoolean(false);
 
-        animeAgent.chat(conversationId, userMessage)
-                .onNext(emitter::text)
-                .onToolExecuted(toolExecution -> {
-                    if (CRAWL_TOOL_NAMES.contains(toolExecution.request().name())) {
-                        CrawlResultEmitter.emitFromJson(toolExecution.result(), emitter, objectMapper);
-                    }
-                })
-                .onComplete(response -> latch.countDown())
-                .onError(error -> {
-                    errorRef.set(error);
-                    failed.set(true);
-                    latch.countDown();
-                })
-                .start();
+        blackboardService.onUserMessage(conversationId, userMessage);
+        String anchoredMessage = prependAnchor(conversationId, userMessage);
+
+        SessionContextHolder.set(conversationId);
+        try {
+            animeAgent.chat(conversationId, anchoredMessage)
+                    .onNext(emitter::text)
+                    .onToolExecuted(toolExecution -> {
+                        if (CRAWL_TOOL_NAMES.contains(toolExecution.request().name())) {
+                            CrawlResultEmitter.emitFromJson(toolExecution.result(), emitter, objectMapper);
+                            syncBlackboardFromCrawl(conversationId, toolExecution.result());
+                        }
+                    })
+                    .onComplete(response -> latch.countDown())
+                    .onError(error -> {
+                        errorRef.set(error);
+                        failed.set(true);
+                        latch.countDown();
+                    })
+                    .start();
+        } finally {
+            SessionContextHolder.clear();
+        }
 
         awaitAndFinish(latch, errorRef, failed, messageId, conversationId, emitter);
+    }
+
+    private String prependAnchor(String conversationId, String userMessage) {
+        String anchor = blackboardService.buildAnchorPrompt(conversationId);
+        if (anchor.isBlank()) {
+            return userMessage;
+        }
+        return anchor + "\n【用户当前提问】\n" + userMessage;
+    }
+
+    private void syncBlackboardFromCrawl(String conversationId, String rawResult) {
+        try {
+            CrawlResourceResult result = objectMapper.readValue(rawResult, CrawlResourceResult.class);
+            List<String> titles = new ArrayList<>();
+            result.videos().forEach(v -> titles.add(v.title()));
+            result.links().forEach(l -> titles.add(l.title()));
+            blackboardService.syncFromSearchResults(conversationId, result.keyword(), titles);
+        } catch (Exception ignored) {
+            // 黑板同步失败不影响主流程
+        }
     }
 
     private void streamWithHeuristic(
@@ -80,9 +117,10 @@ public class LangChainStreamingAgent implements AgentHandler {
             String messageId,
             StreamEmitter emitter
     ) {
+        blackboardService.onUserMessage(conversationId, userMessage);
         Optional<CrawlIntentParser.CrawlIntent> intent = CrawlIntentParser.parse(userMessage);
         if (intent.isPresent()) {
-            if (streamCrawlResult(intent.get(), emitter)) {
+            if (streamCrawlResult(conversationId, intent.get(), emitter)) {
                 emitter.done(messageId, conversationId);
             }
             return;
@@ -121,10 +159,18 @@ public class LangChainStreamingAgent implements AgentHandler {
         emitter.done(messageId, conversationId);
     }
 
-    private boolean streamCrawlResult(CrawlIntentParser.CrawlIntent intent, StreamEmitter emitter) {
+    private boolean streamCrawlResult(
+            String conversationId,
+            CrawlIntentParser.CrawlIntent intent,
+            StreamEmitter emitter
+    ) {
         emitter.text("正在站点 " + intent.site() + " 检索「" + intent.keyword() + "」...\n\n");
         try {
             CrawlResourceResult result = crawlerService.crawl(intent.keyword(), intent.site());
+            List<String> titles = new ArrayList<>();
+            result.videos().forEach(v -> titles.add(v.title()));
+            result.links().forEach(l -> titles.add(l.title()));
+            blackboardService.syncFromSearchResults(conversationId, result.keyword(), titles);
             CrawlResultEmitter.emit(result, emitter);
             return true;
         } catch (AppException ex) {
