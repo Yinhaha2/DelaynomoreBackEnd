@@ -16,14 +16,16 @@ public class ResourceCrawlTools {
     }
 
     @Tool("""
-            在指定站点按关键词定向检索视频/链接/图片资源。
-            参数 keyword 为搜索关键词（如番剧名），site 为站点插件名（如 DM84）或站点 baseURL。
+            在指定站点按关键词定向检索动漫/影视的视频、链接与图片资源。
+            keyword 为搜索关键词（番剧名、季数等），site 为站点插件名（如 DM84）或站点 baseURL。
+            用户未指定站点时使用 DM84。
             """)
-    public String crawlResources(
-            @P("搜索关键词，例如：葬送的芙莉莲") String keyword,
-            @P("目标站点插件名或 baseURL，例如：DM84") String site
+    public String searchResources(
+            @P("搜索关键词，例如：咒术回战 第二季") String keyword,
+            @P("目标站点插件名或 baseURL，默认 DM84") String site
     ) {
-        CrawlResourceResult result = crawlerService.crawl(keyword, site);
+        String resolvedSite = site == null || site.isBlank() ? "DM84" : site.trim();
+        CrawlResourceResult result = crawlerService.crawl(keyword.trim(), resolvedSite);
         try {
             return objectMapper.writeValueAsString(result);
         } catch (Exception ex) {

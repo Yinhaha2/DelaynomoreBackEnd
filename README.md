@@ -44,24 +44,45 @@ src/main/java/com/agentcrawler/
 - `chapterRoads` / `chapterResult` 章节线路解析
 - 扩展字段 `searchImage` 用于封面图提取
 
+### LangChain4j Agent 编排
+
+三大积木：
+
+| 组件 | 实现 |
+|------|------|
+| System Prompt | `AnimeAgent` 接口 `@SystemMessage` |
+| ChatMemory | `MessageWindowChatMemory`（每会话独立，默认 10 条） |
+| Tool | `ResourceCrawlTools.searchResources(keyword, site)` |
+
+多轮对话：前端在 `POST /api/v1/chat/stream` 请求体中携带同一 `conversation_id`，LangChain4j 通过 `@MemoryId` 自动加载滑动窗口历史，支持「它的第二季有吗？」等指代消歧。
+
 ### LangChain4j 工具
 
-`ResourceCrawlTools.crawlResources(keyword, site)` 被 Agent 调用：
+`ResourceCrawlTools.searchResources(keyword, site)` 被 Agent 调用：
 
-- `keyword`：搜索关键词（番剧名等）
-- `site`：插件名（如 `DM84`）或站点 baseURL
+- `keyword`：搜索关键词（番剧名、季数等）
+- `site`：插件名（如 `DM84`）或站点 baseURL，默认 `DM84`
 
-Agent 会将爬取结果转为 SSE 的 `text_delta` / `link` / `image` 块推送给前端。
+Agent 会将爬取结果转为 SSE 的 `text_delta` / `video` / `link` / `image` 块推送给前端。
 
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
-| `OPENAI_API_KEY` | OpenAI Key（可选，用于 LLM 意图理解） | 空 |
-| `OPENAI_BASE_URL` | OpenAI 兼容 API 地址 | `https://api.openai.com/v1` |
-| `OPENAI_MODEL` | 模型名称 | `gpt-4o-mini` |
+| `DEEPSEEK_API_KEY` | DeepSeek API Key（**必填**以启用 LLM Agent） | 空 |
+| `DEEPSEEK_BASE_URL` | DeepSeek OpenAI 兼容地址 | `https://api.deepseek.com/v1` |
+| `DEEPSEEK_MODEL` | 模型名称 | `deepseek-chat` |
 
-未配置 `OPENAI_API_KEY` 时，后端会使用启发式解析（识别《番剧名》等）直接调用爬虫工具。
+启动前配置（勿将 Key 提交到 Git）：
+
+```bash
+cp .env.example .env
+# 编辑 .env 填入 DEEPSEEK_API_KEY
+export $(grep -v '^#' .env | xargs)
+mvn spring-boot:run
+```
+
+未配置 `DEEPSEEK_API_KEY` 时，后端降级为启发式检索（仅识别《番剧名》格式，无多轮 LLM）。
 
 ## 前端联调
 
@@ -79,6 +100,5 @@ mvn test
 
 ## 后续扩展
 
-- 接入 Kazumi 更多 API 模式插件（`searchMode=api`）
 - Playwright 解析需 WebView 的播放页（Kazumi `useWebview` 场景）
-- 持久化会话与爬取结果
+- ChatMemory 持久化到 Redis / DB
