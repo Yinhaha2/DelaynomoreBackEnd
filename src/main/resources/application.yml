@@ -29,3 +29,8 @@ agent:
     storage-dir: ${AGENT_UPLOAD_DIR:./data/uploads}
     public-base-url: ${AGENT_PUBLIC_BASE_URL:http://localhost:8000}
     max-size-bytes: 33554432
+  link:
+    timeout-seconds: 5
+    max-links-per-message: 3
+    min-confidence-to-lock: 0.65
+    allow-private-hosts: false

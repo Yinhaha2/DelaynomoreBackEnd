@@ -7,6 +7,9 @@ import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
 import com.agentcrawler.crawler.service.ResourceCrawlerService;
+import com.agentcrawler.link.LinkInspectionResult;
+import com.agentcrawler.link.LinkInspectorService;
+import com.agentcrawler.link.LinkMessageEnricher;
 import com.agentcrawler.model.ChatAttachment;
 import com.agentcrawler.streaming.StreamEmitter;
 import com.agentcrawler.vision.ImageUploadService;
@@ -27,25 +30,29 @@ import java.util.concurrent.atomic.AtomicReference;
 public class LangChainStreamingAgent implements AgentHandler {
     private static final Set<String> CRAWL_TOOL_NAMES = Set.of("searchResources", "crawlResources");
     private static final Set<String> VISION_TOOL_NAMES = Set.of("analyzeAnimeImage");
+    private static final Set<String> LINK_TOOL_NAMES = Set.of("inspectLink");
 
     private final ResourceCrawlerService crawlerService;
     private final ObjectMapper objectMapper;
     private final ObjectProvider<AnimeAgent> animeAgentProvider;
     private final SessionBlackboardService blackboardService;
     private final ImageUploadService imageUploadService;
+    private final LinkInspectorService linkInspectorService;
 
     public LangChainStreamingAgent(
             ResourceCrawlerService crawlerService,
             ObjectMapper objectMapper,
             ObjectProvider<AnimeAgent> animeAgentProvider,
             SessionBlackboardService blackboardService,
-            ImageUploadService imageUploadService
+            ImageUploadService imageUploadService,
+            LinkInspectorService linkInspectorService
     ) {
         this.crawlerService = crawlerService;
         this.objectMapper = objectMapper;
         this.animeAgentProvider = animeAgentProvider;
         this.blackboardService = blackboardService;
         this.imageUploadService = imageUploadService;
+        this.linkInspectorService = linkInspectorService;
     }
 
     @Override
@@ -77,7 +84,9 @@ public class LangChainStreamingAgent implements AgentHandler {
         AtomicBoolean failed = new AtomicBoolean(false);
 
         blackboardService.onUserMessage(conversationId, userMessage);
+        List<LinkInspectionResult> inspections = linkInspectorService.inspectMessage(conversationId, userMessage);
         String enrichedMessage = AttachmentMessageEnricher.enrich(userMessage, attachments, imageUploadService);
+        enrichedMessage = LinkMessageEnricher.enrich(enrichedMessage, inspections);
         String anchoredMessage = prependAnchor(conversationId, enrichedMessage);
 
         SessionContextHolder.set(conversationId);
@@ -91,6 +100,8 @@ public class LangChainStreamingAgent implements AgentHandler {
                             syncBlackboardFromCrawl(conversationId, toolExecution.result());
                         } else if (VISION_TOOL_NAMES.contains(toolName)) {
                             emitter.text("\n[视觉识别完成]\n");
+                        } else if (LINK_TOOL_NAMES.contains(toolName)) {
+                            emitter.text("\n[链接解析完成]\n");
                         }
                     })
                     .onComplete(response -> latch.countDown())

@@ -27,6 +27,11 @@ public interface AnimeAgent {
             2. 主 Agent 只调度 URL 字符串，绝不处理 base64；imageUrl 使用系统提供的 http://.../api/v1/files/images/... 地址。
             3. analyzeAnimeImage 返回结构化 JSON（作品名/角色/集数线索/置信度），识别成功后会自动锁定实体黑板；随后再调用 searchResources 检索资源。
 
+            【链接解析】：
+            1. 用户消息中的 URL / magnet 已由后端确定性提取并嗅探，头部可能出现「系统前置链接解析」。优先使用其中的锁定作品名，不要自己从原文里抠链接。
+            2. 仅当需要补充解析某个未被覆盖的完整 URL 时，才调用 inspectLink(url)；url 必须原样传入，禁止截断 query。
+            3. 若链接已解析出作品名且用户想看资源，直接 searchResources(作品名)。磁力链给出 InfoHash / 文件名即可，不必强行爬网页。
+
             【输出格式规范】：
             1. 如果工具返回了有效资源，必须以清晰规整的 Markdown 列表呈现，包含：资源标题、画质说明、可点击的跳转链接。
             2. 在给出链接之后，附上 1~2 句你对该作品的简短推荐语或观影顺序建议。
