@@ -7,4 +7,4 @@ agent:
     request-timeout-seconds: 5
   llm:
     api-key: ""
-    memory-max-messages: 10
+    memory-max-messages: 4

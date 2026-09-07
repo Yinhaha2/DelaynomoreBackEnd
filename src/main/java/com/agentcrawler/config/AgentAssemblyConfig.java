@@ -2,6 +2,7 @@ package com.agentcrawler.config;
 
 import com.agentcrawler.agent.langchain.AnimeAgent;
 import com.agentcrawler.agent.langchain.ResourceCrawlTools;
+import com.agentcrawler.agent.session.SessionContextTools;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
 import dev.langchain4j.memory.chat.MessageWindowChatMemory;
 import dev.langchain4j.model.chat.StreamingChatLanguageModel;
@@ -27,11 +28,12 @@ public class AgentAssemblyConfig {
     AnimeAgent animeAgent(
             StreamingChatLanguageModel streamingChatLanguageModel,
             ResourceCrawlTools resourceCrawlTools,
+            SessionContextTools sessionContextTools,
             ChatMemoryProvider chatMemoryProvider
     ) {
         return AiServices.builder(AnimeAgent.class)
                 .streamingChatLanguageModel(streamingChatLanguageModel)
-                .tools(resourceCrawlTools)
+                .tools(resourceCrawlTools, sessionContextTools)
                 .chatMemoryProvider(chatMemoryProvider)
                 .build();
     }
