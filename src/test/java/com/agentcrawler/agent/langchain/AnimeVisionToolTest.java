@@ -36,7 +36,8 @@ class AnimeVisionToolTest {
                 new AppProperties.Crawler(3, 5, 5),
                 new AppProperties.Llm("key", "https://api.deepseek.com/v1", "deepseek-chat", 4),
                 new AppProperties.Vision("deepseek-v4-flash-vision-exp", "original", 0.7),
-                new AppProperties.Upload("./data/uploads", "http://localhost:8000", 33_554_432)
+                new AppProperties.Upload("./data/uploads", "http://localhost:8000", 33_554_432),
+                new AppProperties.Link(5, 3, 0.65, true)
         );
         visionTool = new AnimeVisionTool(visionClient, blackboardService, properties, new ObjectMapper());
     }

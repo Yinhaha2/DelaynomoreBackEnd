@@ -2,6 +2,7 @@ package com.agentcrawler.config;
 
 import com.agentcrawler.agent.langchain.AnimeAgent;
 import com.agentcrawler.agent.langchain.AnimeVisionTool;
+import com.agentcrawler.agent.langchain.LinkInspectorTool;
 import com.agentcrawler.agent.langchain.ResourceCrawlTools;
 import com.agentcrawler.agent.session.SessionContextTools;
 import dev.langchain4j.memory.chat.ChatMemoryProvider;
@@ -31,6 +32,7 @@ public class AgentAssemblyConfig {
             StreamingChatLanguageModel streamingChatLanguageModel,
             ResourceCrawlTools resourceCrawlTools,
             SessionContextTools sessionContextTools,
+            LinkInspectorTool linkInspectorTool,
             ObjectProvider<AnimeVisionTool> animeVisionToolProvider,
             ChatMemoryProvider chatMemoryProvider
     ) {
@@ -40,9 +42,9 @@ public class AgentAssemblyConfig {
 
         AnimeVisionTool visionTool = animeVisionToolProvider.getIfAvailable();
         if (visionTool != null) {
-            builder.tools(resourceCrawlTools, sessionContextTools, visionTool);
+            builder.tools(resourceCrawlTools, sessionContextTools, linkInspectorTool, visionTool);
         } else {
-            builder.tools(resourceCrawlTools, sessionContextTools);
+            builder.tools(resourceCrawlTools, sessionContextTools, linkInspectorTool);
         }
         return builder.build();
     }

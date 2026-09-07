@@ -65,6 +65,18 @@ src/main/java/com/agentcrawler/
 
 Agent 会将爬取结果转为 SSE 的 `text_delta` / `video` / `link` / `image` 块推送给前端。
 
+### 链接前置解析
+
+用户消息里的 HTTP(S) / magnet 由 Java **确定性提取**（不靠 LLM 抠 URL），再分类嗅探：
+
+- 网页：Jsoup 读 OpenGraph / `<title>`，提炼作品名
+- 短链：跟随重定向后重新分类（b23.tv / t.cn 等）
+- 视频站：提取 BV 号 / YouTube ID
+- 磁力链：解析 InfoHash 与 `dn` 文件名
+- 直链：识别 `.m3u8` / `.mp4`
+
+解析成功后自动写入实体黑板，并把结构化事实注入 Agent Prompt。Agent 仍可通过 `inspectLink(url)` 补充解析。
+
 ## 环境变量
 
 | 变量 | 说明 | 默认值 |

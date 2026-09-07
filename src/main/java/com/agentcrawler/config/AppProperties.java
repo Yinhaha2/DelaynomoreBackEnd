@@ -9,7 +9,8 @@ public record AppProperties(
         Crawler crawler,
         Llm llm,
         Vision vision,
-        Upload upload
+        Upload upload,
+        Link link
 ) {
     public record Crawler(
             int maxSearchResults,
@@ -34,5 +35,12 @@ public record AppProperties(
             String storageDir,
             String publicBaseUrl,
             long maxSizeBytes
+    ) {}
+
+    public record Link(
+            int timeoutSeconds,
+            int maxLinksPerMessage,
+            double minConfidenceToLock,
+            boolean allowPrivateHosts
     ) {}
 }

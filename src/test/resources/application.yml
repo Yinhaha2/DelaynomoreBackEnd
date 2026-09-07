@@ -16,3 +16,8 @@ agent:
     storage-dir: ./target/test-uploads
     public-base-url: http://localhost:8000
     max-size-bytes: 33554432
+  link:
+    timeout-seconds: 3
+    max-links-per-message: 3
+    min-confidence-to-lock: 0.65
+    allow-private-hosts: true
