@@ -17,7 +17,7 @@ mvn spring-boot:run
 | `POST` | `/api/v1/conversations` | 创建会话 |
 | `POST` | `/api/v1/chat/stream` | 发送消息，SSE 流式返回 |
 
-接口规范见 `docs/2026-09-03_接口文档_1.md`。
+接口规范见 `docs/2026-09-03_接口文档_1.md`。前后端联调步骤见 `docs/2026-09-07_联调指南.md`。
 
 ## 架构
 
@@ -98,11 +98,13 @@ mvn spring-boot:run
 
 ## 前端联调
 
+详见 `docs/2026-09-07_联调指南.md`。最短路径：
+
 ```env
 VITE_USE_MOCK_STREAM=false
 ```
 
-Vite 代理 `/api` → `http://localhost:8000`。
+Vite 代理 `/api` → `http://localhost:8000`。先打通纯文本 SSE，再测发图（先上传再 attachments），链接直接写在 `message` 里即可。
 
 ## 测试
 
