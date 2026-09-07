@@ -1,7 +1,16 @@
 package com.agentcrawler.agent;
 
+import com.agentcrawler.model.ChatAttachment;
 import com.agentcrawler.streaming.StreamEmitter;
 
+import java.util.List;
+
 public interface AgentHandler {
-    void streamReply(String conversationId, String userMessage, String messageId, StreamEmitter emitter);
+    void streamReply(
+            String conversationId,
+            String userMessage,
+            List<ChatAttachment> attachments,
+            String messageId,
+            StreamEmitter emitter
+    );
 }
