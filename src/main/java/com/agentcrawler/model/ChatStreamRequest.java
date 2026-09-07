@@ -1,8 +1,19 @@
 package com.agentcrawler.model;
 
-import jakarta.validation.constraints.NotBlank;
+import java.util.List;
 
 public record ChatStreamRequest(
-        @NotBlank String message,
-        String conversationId
-) {}
+        String message,
+        String conversationId,
+        List<ChatAttachment> attachments
+) {
+    public ChatStreamRequest {
+        if (attachments == null) {
+            attachments = List.of();
+        }
+    }
+
+    public boolean hasAttachments() {
+        return !attachments.isEmpty();
+    }
+}

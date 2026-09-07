@@ -5,9 +5,11 @@ import com.agentcrawler.config.AppProperties;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
 import com.agentcrawler.core.IdGenerator;
+import com.agentcrawler.model.ChatAttachment;
 import com.agentcrawler.model.ChatStreamRequest;
 import com.agentcrawler.streaming.StreamEmitter;
 
+import java.util.List;
 import java.util.function.Consumer;
 
 import org.springframework.stereotype.Service;
@@ -29,13 +31,17 @@ public class ChatService {
     }
 
     public void streamChat(ChatStreamRequest request, Consumer<String> frameConsumer) {
-        String message = request.message().trim();
-        if (message.isEmpty()) {
+        String message = request.message() == null ? "" : request.message().trim();
+        List<ChatAttachment> attachments = request.attachments();
+        if (message.isEmpty() && !request.hasAttachments()) {
             frameConsumer.accept(com.agentcrawler.streaming.SseEncoder.error(
                     ErrorCode.INVALID_REQUEST.name(),
-                    "message 不能为空"
+                    "message 与 attachments 不能同时为空"
             ));
             return;
+        }
+        if (message.isEmpty()) {
+            message = "请分析这张图片并告诉我出处。";
         }
 
         String conversationId = request.conversationId();
@@ -58,7 +64,7 @@ public class ChatService {
         StreamEmitter streamEmitter = new StreamEmitter(properties.textChunkMaxChars(), frameConsumer);
 
         try {
-            agentHandler.streamReply(conversationId, message, messageId, streamEmitter);
+            agentHandler.streamReply(conversationId, message, attachments, messageId, streamEmitter);
         } catch (AppException ex) {
             frameConsumer.accept(com.agentcrawler.streaming.SseEncoder.error(ex.getCode().name(), ex.getMessage()));
         } catch (Exception ex) {

@@ -16,6 +16,10 @@ public final class IdGenerator {
         return "msg_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
     }
 
+    public static String imageId() {
+        return "img_" + UUID.randomUUID().toString().replace("-", "").substring(0, 12);
+    }
+
     public static String nowIso() {
         return DateTimeFormatter.ISO_INSTANT.format(Instant.now().truncatedTo(ChronoUnit.SECONDS));
     }

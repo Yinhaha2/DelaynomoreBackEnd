@@ -6,5 +6,7 @@ public enum ErrorCode {
     AGENT_TIMEOUT,
     AGENT_ERROR,
     CRAWL_FAILED,
-    RATE_LIMITED
+    RATE_LIMITED,
+    VISION_FAILED,
+    UPLOAD_FAILED
 }

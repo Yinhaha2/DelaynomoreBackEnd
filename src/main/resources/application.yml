@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: agent-crawler-api
+  servlet:
+    multipart:
+      max-file-size: 32MB
+      max-request-size: 48MB
 
 agent:
   handler: langchain
@@ -17,3 +21,11 @@ agent:
     base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
     model: ${DEEPSEEK_MODEL:deepseek-chat}
     memory-max-messages: 4
+  vision:
+    model: ${DEEPSEEK_VISION_MODEL:deepseek-v4-flash-vision-exp}
+    detail: ${DEEPSEEK_VISION_DETAIL:original}
+    min-confidence-to-lock: 0.7
+  upload:
+    storage-dir: ${AGENT_UPLOAD_DIR:./data/uploads}
+    public-base-url: ${AGENT_PUBLIC_BASE_URL:http://localhost:8000}
+    max-size-bytes: 33554432
