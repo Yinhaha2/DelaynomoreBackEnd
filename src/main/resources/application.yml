@@ -17,6 +17,7 @@ agent:
     max-episodes-per-road: 5
     request-timeout-seconds: 20
   llm:
+    # main 启动时 EnvFileLoader 会从 .env 写入 DEEPSEEK_API_KEY / agent.llm.api-key
     api-key: ${DEEPSEEK_API_KEY:}
     base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com/v1}
     model: ${DEEPSEEK_MODEL:deepseek-chat}

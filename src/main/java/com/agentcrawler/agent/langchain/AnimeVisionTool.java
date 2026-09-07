@@ -3,6 +3,7 @@ package com.agentcrawler.agent.langchain;
 import com.agentcrawler.agent.session.SessionBlackboardService;
 import com.agentcrawler.agent.session.SessionContextHolder;
 import com.agentcrawler.config.AppProperties;
+import com.agentcrawler.config.LlmApiKeyCondition;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
 import com.agentcrawler.vision.AnimeVisionAnalysisResult;
@@ -10,14 +11,14 @@ import com.agentcrawler.vision.DeepSeekVisionClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.stereotype.Component;
 
 /**
  * 视觉感知 Tool：内部调用 deepseek-v4-flash-vision-exp，结构化输出并自动锁定实体黑板。
  */
 @Component
-@ConditionalOnBean(DeepSeekVisionClient.class)
+@Conditional(LlmApiKeyCondition.class)
 public class AnimeVisionTool {
 
     private final DeepSeekVisionClient visionClient;

@@ -20,6 +20,9 @@ public final class TemplateRenderer {
     }
 
     private static String render(String template, Map<String, String> variables, boolean encode) {
+        if (template == null || template.isBlank()) {
+            throw new IllegalArgumentException("站点规则缺少 searchURL，无法构造搜索地址");
+        }
         Matcher matcher = VARIABLE.matcher(template);
         StringBuilder builder = new StringBuilder();
         while (matcher.find()) {

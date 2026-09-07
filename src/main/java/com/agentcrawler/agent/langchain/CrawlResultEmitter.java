@@ -8,15 +8,22 @@ public final class CrawlResultEmitter {
     private CrawlResultEmitter() {}
 
     public static void emitFromJson(String rawResult, StreamEmitter emitter, ObjectMapper objectMapper) {
+        if (rawResult == null || rawResult.isBlank()) {
+            return;
+        }
         try {
             CrawlResourceResult result = objectMapper.readValue(rawResult, CrawlResourceResult.class);
             emit(result, emitter);
         } catch (Exception ex) {
-            emitter.text(rawResult);
+            // 工具失败时不要把异常原文写进对话流
         }
     }
 
     public static void emit(CrawlResourceResult result, StreamEmitter emitter) {
+        if (result.error() != null && !result.error().isBlank() && !result.hasResources()) {
+            return;
+        }
+
         emitter.text("插件: " + result.pluginName() + "\n");
         emitter.text("关键词: " + result.keyword() + "\n\n");
 

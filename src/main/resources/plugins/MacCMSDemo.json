@@ -1,5 +1,6 @@
 {
   "name": "MacCMSDemo",
+  "enabled": false,
   "baseURL": "https://example-cms.test/",
   "searchMode": "api",
   "chapterMode": "api",

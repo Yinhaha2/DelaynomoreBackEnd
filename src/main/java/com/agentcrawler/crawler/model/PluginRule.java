@@ -19,6 +19,7 @@ public class PluginRule {
     private boolean usePost = false;
     private String searchMode = "xpath";
     private String chapterMode = "xpath";
+    private Boolean enabled;
     private ApiSearchConfig searchApiConfig = new ApiSearchConfig();
     private ApiChapterConfig chapterApiConfig = new ApiChapterConfig();
 
@@ -150,6 +151,23 @@ public class PluginRule {
 
     public void setChapterApiConfig(ApiChapterConfig chapterApiConfig) {
         this.chapterApiConfig = chapterApiConfig == null ? new ApiChapterConfig() : chapterApiConfig;
+    }
+
+    public Boolean getEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(Boolean enabled) {
+        this.enabled = enabled;
+    }
+
+    public boolean isEnabled() {
+        return enabled == null || enabled;
+    }
+
+    public boolean isPlaceholder() {
+        String host = baseURL == null ? "" : baseURL.toLowerCase();
+        return host.contains("example.") || host.contains(".test/") || host.endsWith(".test");
     }
 
     public boolean isSearchApiMode() {

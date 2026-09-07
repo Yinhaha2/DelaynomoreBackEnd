@@ -30,8 +30,6 @@ import java.util.concurrent.atomic.AtomicReference;
 @Component
 public class LangChainStreamingAgent implements AgentHandler {
     private static final Set<String> CRAWL_TOOL_NAMES = Set.of("searchResources", "crawlResources");
-    private static final Set<String> VISION_TOOL_NAMES = Set.of("analyzeAnimeImage");
-    private static final Set<String> LINK_TOOL_NAMES = Set.of("inspectLink");
 
     private final ResourceCrawlerService crawlerService;
     private final ObjectMapper objectMapper;
@@ -85,6 +83,7 @@ public class LangChainStreamingAgent implements AgentHandler {
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<Throwable> errorRef = new AtomicReference<>();
         AtomicBoolean failed = new AtomicBoolean(false);
+        AgentTokenGate tokenGate = new AgentTokenGate();
 
         blackboardService.onUserMessage(conversationId, userMessage);
         List<LinkInspectionResult> inspections = linkInspectorService.inspectMessage(conversationId, userMessage);
@@ -95,19 +94,22 @@ public class LangChainStreamingAgent implements AgentHandler {
         SessionContextHolder.set(conversationId);
         try {
             animeAgent.chat(conversationId, anchoredMessage)
-                    .onNext(emitter::text)
+                    .onNext(tokenGate::append)
                     .onToolExecuted(toolExecution -> {
+                        tokenGate.discardIntermediate();
                         String toolName = toolExecution.request().name();
                         if (CRAWL_TOOL_NAMES.contains(toolName)) {
                             CrawlResultEmitter.emitFromJson(toolExecution.result(), emitter, objectMapper);
                             syncBlackboardFromCrawl(conversationId, toolExecution.result());
-                        } else if (VISION_TOOL_NAMES.contains(toolName)) {
-                            emitter.text("\n[视觉识别完成]\n");
-                        } else if (LINK_TOOL_NAMES.contains(toolName)) {
-                            emitter.text("\n[链接解析完成]\n");
                         }
                     })
-                    .onComplete(response -> latch.countDown())
+                    .onComplete(response -> {
+                        String finalText = tokenGate.takeFinalText();
+                        if (!finalText.isBlank()) {
+                            emitter.text(finalText);
+                        }
+                        latch.countDown();
+                    })
                     .onError(error -> {
                         errorRef.set(error);
                         failed.set(true);
@@ -160,7 +162,7 @@ public class LangChainStreamingAgent implements AgentHandler {
         emitter.text("""
                 当前未配置 LLM API Key，已启用启发式检索模式。
                 请使用类似：帮我找《番剧名》的播放资源
-                或配置环境变量 DEEPSEEK_API_KEY 以启用多轮对话 Agent。
+                或在项目根目录 .env 中配置 DEEPSEEK_API_KEY 后重启后端。
                 """);
         finishDone(conversationId, userMessage, attachments, needTitle, messageId, emitter);
     }
@@ -227,6 +229,13 @@ public class LangChainStreamingAgent implements AgentHandler {
             result.videos().forEach(v -> titles.add(v.title()));
             result.links().forEach(l -> titles.add(l.title()));
             blackboardService.syncFromSearchResults(conversationId, result.keyword(), titles);
+            if (!result.hasResources()) {
+                String message = result.error() == null || result.error().isBlank()
+                        ? "未提取到可用资源，请更换关键词后重试。"
+                        : result.error();
+                emitter.text(message);
+                return true;
+            }
             CrawlResultEmitter.emit(result, emitter);
             return true;
         } catch (AppException ex) {

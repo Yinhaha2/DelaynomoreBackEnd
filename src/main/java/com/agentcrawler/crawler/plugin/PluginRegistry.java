@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
@@ -49,27 +50,51 @@ public class PluginRegistry {
         String normalized = site.trim();
         PluginRule byName = pluginsByName.get(normalized.toLowerCase(Locale.ROOT));
         if (byName != null) {
-            return byName;
+            return requireUsable(byName, site);
         }
         String host = extractHost(normalized);
         PluginRule byHost = pluginsByHost.get(host);
         if (byHost != null) {
-            return byHost;
+            return requireUsable(byHost, site);
         }
         for (PluginRule rule : pluginsByName.values()) {
             if (rule.getBaseURL().equalsIgnoreCase(normalized)
                     || rule.getBaseURL().equalsIgnoreCase(normalized + "/")) {
-                return rule;
+                return requireUsable(rule, site);
             }
         }
         throw new AppException(
                 ErrorCode.INVALID_REQUEST,
-                "未找到站点规则: " + site + "，可用插件: " + String.join(", ", pluginsByName.keySet())
+                "未找到站点规则: " + site + "，可用插件: " + String.join(", ", usableNames())
         );
     }
 
     public Collection<PluginRule> all() {
         return pluginsByName.values();
+    }
+
+    public List<PluginRule> usable() {
+        return pluginsByName.values().stream()
+                .filter(this::isUsable)
+                .toList();
+    }
+
+    public List<String> usableNames() {
+        return usable().stream().map(PluginRule::getName).toList();
+    }
+
+    private PluginRule requireUsable(PluginRule rule, String site) {
+        if (!isUsable(rule)) {
+            throw new AppException(
+                    ErrorCode.INVALID_REQUEST,
+                    "站点插件不可用: " + site + "，可用插件: " + String.join(", ", usableNames())
+            );
+        }
+        return rule;
+    }
+
+    private boolean isUsable(PluginRule rule) {
+        return rule.isEnabled() && !rule.isPlaceholder();
     }
 
     private String extractHost(String value) {

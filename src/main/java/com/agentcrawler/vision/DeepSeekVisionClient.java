@@ -1,11 +1,12 @@
 package com.agentcrawler.vision;
 
 import com.agentcrawler.config.AppProperties;
+import com.agentcrawler.config.LlmApiKeyCondition;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
+import org.springframework.context.annotation.Conditional;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -21,7 +22,7 @@ import java.util.List;
 import java.util.Map;
 
 @Component
-@ConditionalOnExpression("'${agent.llm.api-key:}'.length() > 0")
+@Conditional(LlmApiKeyCondition.class)
 public class DeepSeekVisionClient {
 
     private static final String ANALYSIS_PROMPT = """
@@ -51,9 +52,13 @@ public class DeepSeekVisionClient {
         this.properties = properties;
         this.imageUploadService = imageUploadService;
         this.objectMapper = objectMapper;
+        String apiKey = properties.llm().apiKey();
+        if (apiKey == null || apiKey.isBlank()) {
+            apiKey = System.getProperty("DEEPSEEK_API_KEY", "");
+        }
         this.restClient = RestClient.builder()
                 .baseUrl(normalizeBaseUrl(properties.llm().baseUrl()))
-                .defaultHeader("Authorization", "Bearer " + properties.llm().apiKey())
+                .defaultHeader("Authorization", "Bearer " + apiKey)
                 .build();
     }
 
