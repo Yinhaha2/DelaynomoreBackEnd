@@ -11,6 +11,7 @@ import com.agentcrawler.link.LinkInspectionResult;
 import com.agentcrawler.link.LinkInspectorService;
 import com.agentcrawler.link.LinkMessageEnricher;
 import com.agentcrawler.model.ChatAttachment;
+import com.agentcrawler.service.ConversationTitleGenerator;
 import com.agentcrawler.streaming.StreamEmitter;
 import com.agentcrawler.vision.ImageUploadService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -60,15 +61,16 @@ public class LangChainStreamingAgent implements AgentHandler {
             String conversationId,
             String userMessage,
             List<ChatAttachment> attachments,
+            boolean needTitle,
             String messageId,
             StreamEmitter emitter
     ) {
         AnimeAgent animeAgent = animeAgentProvider.getIfAvailable();
         if (animeAgent != null) {
-            streamWithAgent(animeAgent, conversationId, userMessage, attachments, messageId, emitter);
+            streamWithAgent(animeAgent, conversationId, userMessage, attachments, needTitle, messageId, emitter);
             return;
         }
-        streamWithHeuristic(conversationId, userMessage, messageId, emitter);
+        streamWithHeuristic(conversationId, userMessage, attachments, needTitle, messageId, emitter);
     }
 
     private void streamWithAgent(
@@ -76,6 +78,7 @@ public class LangChainStreamingAgent implements AgentHandler {
             String conversationId,
             String userMessage,
             List<ChatAttachment> attachments,
+            boolean needTitle,
             String messageId,
             StreamEmitter emitter
     ) {
@@ -115,7 +118,7 @@ public class LangChainStreamingAgent implements AgentHandler {
             SessionContextHolder.clear();
         }
 
-        awaitAndFinish(latch, errorRef, failed, messageId, conversationId, emitter);
+        awaitAndFinish(latch, errorRef, failed, messageId, conversationId, userMessage, attachments, needTitle, emitter);
     }
 
     private String prependAnchor(String conversationId, String userMessage) {
@@ -141,6 +144,8 @@ public class LangChainStreamingAgent implements AgentHandler {
     private void streamWithHeuristic(
             String conversationId,
             String userMessage,
+            List<ChatAttachment> attachments,
+            boolean needTitle,
             String messageId,
             StreamEmitter emitter
     ) {
@@ -148,7 +153,7 @@ public class LangChainStreamingAgent implements AgentHandler {
         Optional<CrawlIntentParser.CrawlIntent> intent = CrawlIntentParser.parse(userMessage);
         if (intent.isPresent()) {
             if (streamCrawlResult(conversationId, intent.get(), emitter)) {
-                emitter.done(messageId, conversationId);
+                finishDone(conversationId, userMessage, attachments, needTitle, messageId, emitter);
             }
             return;
         }
@@ -157,7 +162,7 @@ public class LangChainStreamingAgent implements AgentHandler {
                 请使用类似：帮我找《番剧名》的播放资源
                 或配置环境变量 DEEPSEEK_API_KEY 以启用多轮对话 Agent。
                 """);
-        emitter.done(messageId, conversationId);
+        finishDone(conversationId, userMessage, attachments, needTitle, messageId, emitter);
     }
 
     private void awaitAndFinish(
@@ -166,6 +171,9 @@ public class LangChainStreamingAgent implements AgentHandler {
             AtomicBoolean failed,
             String messageId,
             String conversationId,
+            String userMessage,
+            List<ChatAttachment> attachments,
+            boolean needTitle,
             StreamEmitter emitter
     ) {
         try {
@@ -183,7 +191,28 @@ public class LangChainStreamingAgent implements AgentHandler {
             emitter.error(ErrorCode.AGENT_ERROR, "Agent 内部错误: " + errorRef.get().getMessage());
             return;
         }
-        emitter.done(messageId, conversationId);
+        finishDone(conversationId, userMessage, attachments, needTitle, messageId, emitter);
+    }
+
+    private void finishDone(
+            String conversationId,
+            String userMessage,
+            List<ChatAttachment> attachments,
+            boolean needTitle,
+            String messageId,
+            StreamEmitter emitter
+    ) {
+        String title = null;
+        if (needTitle) {
+            String locked = null;
+            var state = blackboardService.get(conversationId);
+            if (state != null && state.getWorkTitle() != null && !state.getWorkTitle().isBlank()) {
+                locked = state.getWorkTitle();
+            }
+            boolean hasAttachments = attachments != null && !attachments.isEmpty();
+            title = ConversationTitleGenerator.generate(userMessage, hasAttachments, locked);
+        }
+        emitter.done(messageId, conversationId, title);
     }
 
     private boolean streamCrawlResult(
