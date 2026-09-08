@@ -10,6 +10,7 @@ import com.agentcrawler.crawler.model.PluginRule;
 import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
 import com.agentcrawler.crawler.plugin.PluginRegistry;
+import com.agentcrawler.crawler.fallback.SiteFallback;
 import com.agentcrawler.crawler.webview.FetchedPage;
 import org.junit.jupiter.api.Test;
 
@@ -59,7 +60,7 @@ class ResourceCrawlerServiceTest {
         AppProperties properties = new AppProperties(
                 "langchain",
                 512,
-                new AppProperties.Crawler(3, 5, 5, new AppProperties.Crawler.WebView(false, true, 25, 8)),
+                new AppProperties.Crawler(3, 5, 5, new AppProperties.Crawler.WebView(false, true, 25, 8), AppProperties.Crawler.Fallback.disabled()),
                 new AppProperties.Llm("", "https://api.deepseek.com/v1", "deepseek-chat", 4),
                 new AppProperties.Vision("deepseek-v4-flash-vision-exp", "original", 0.7),
                 new AppProperties.Upload("./data/uploads", "http://localhost:8000", 33_554_432),
@@ -88,5 +89,46 @@ class ResourceCrawlerServiceTest {
         assertEquals(1, result.videos().size());
         assertEquals("https://cdn.example/a.m3u8", result.videos().get(0).url());
         assertEquals("第1集", result.videos().get(0).title());
+    }
+
+    @Test
+    void fallsBackToDedicatedSiteWhenPluginHasNoVideos() {
+        PluginRegistry registry = mock(PluginRegistry.class);
+        RuleEngine engine = mock(RuleEngine.class);
+        MediaExtractor extractor = mock(MediaExtractor.class);
+        AppProperties properties = new AppProperties(
+                "langchain",
+                512,
+                new AppProperties.Crawler(3, 5, 5, new AppProperties.Crawler.WebView(false, true, 25, 8), AppProperties.Crawler.Fallback.disabled()),
+                new AppProperties.Llm("", "https://api.deepseek.com/v1", "deepseek-chat", 4),
+                new AppProperties.Vision("deepseek-v4-flash-vision-exp", "original", 0.7),
+                new AppProperties.Upload("./data/uploads", "http://localhost:8000", 33_554_432),
+                new AppProperties.Link(5, 3, 0.65, true)
+        );
+        PluginRule rule = new PluginRule();
+        rule.setName("DM84");
+        when(registry.usable()).thenReturn(List.of(rule));
+        when(registry.resolve("DM84")).thenReturn(rule);
+        when(engine.search(rule, "芙莉莲")).thenThrow(new AppException(ErrorCode.CRAWL_FAILED, "搜索失败: HTTP 522"));
+
+        SiteFallback yhdm = mock(SiteFallback.class);
+        when(yhdm.name()).thenReturn("YHDM");
+        when(yhdm.enabled()).thenReturn(true);
+        when(yhdm.matches(any())).thenReturn(false);
+        when(yhdm.crawl("芙莉莲", 3, 5)).thenReturn(new CrawlResourceResult(
+                "芙莉莲",
+                "YHDM",
+                "YHDM",
+                List.of(new CrawlResourceResult.VideoResource("第1集", "https://cdn.example/a.m3u8", "http://y/v/1", "默认播放列表")),
+                List.of(),
+                List.of()
+        ));
+
+        ResourceCrawlerService service = new ResourceCrawlerService(
+                registry, engine, extractor, properties, List.of(yhdm)
+        );
+        CrawlResourceResult result = service.crawl("芙莉莲", "DM84");
+        assertEquals("YHDM", result.pluginName());
+        assertEquals("https://cdn.example/a.m3u8", result.videos().get(0).url());
     }
 }

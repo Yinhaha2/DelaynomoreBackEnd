@@ -31,6 +31,7 @@ src/main/java/com/agentcrawler/
 │   ├── media/           # 视频 m3u8/mp4、图片、链接提取
 │   ├── plugin/          # 站点规则注册（plugins/*.json）
 │   ├── webview/         # Playwright Chromium（useWebview 规则）
+│   ├── fallback/        # YHDM / SiliSili 专用降级解析（插件拿不到播放地址时）
 │   └── service/         # 定向爬取编排
 ├── service/             # 会话 / 对话业务
 └── store/               # 内存会话存储
@@ -43,8 +44,27 @@ src/main/java/com/agentcrawler/
 - `searchURL` + `@keyword` 占位符
 - `searchList` / `searchName` / `searchResult` XPath 选择器
 - `chapterRoads` / `chapterResult` 章节线路解析
-- 扩展字段 `searchImage` 用于封面图提取
+- 扩展字段 `searchImage` 用于封面图提取（`src` / `data-src` / `srcset`）
+- 插件可带 `cookie` 与 `headers`
 - `useWebview: true` 时用 Playwright 渲染页面，并拦截网络里的 `.m3u8` / `.mp4`（以及播放器里的 `player_aaaa.url`）
+
+插件先抓；若没有播放地址，再降级到写死选择器的 **YHDM（樱花动漫）** / **SiliSili**，实现参考 [SakuraAnime](https://github.com/670848654/SakuraAnime)。域名可配，站点一改版只动 adapter：
+
+```yaml
+agent:
+  crawler:
+    fallback:
+      enabled: true
+      yhdm:
+        base-url: http://www.iyinghua.io
+      silisili:
+        base-url: https://www.silisili.link
+        cookie: silisili=on
+```
+
+环境变量：`AGENT_YHDM_BASE_URL`、`AGENT_SILISILI_BASE_URL`。用户指定「樱花」/「嘶哩嘶哩」时会优先走对应 adapter。
+
+OkHttp 会跟 HTML 的 `meta refresh` 和 “verified successfully” 跳转页（HTTP 3xx 之外的那一类）。播放地址会解开 `?url=` 包装，并识别 `changeplay('...')`。
 
 本机首次使用 WebView 前需要安装 Chromium：
 

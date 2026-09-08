@@ -10,6 +10,16 @@ agent:
       headless: true
       navigation-timeout-seconds: 8
       settle-timeout-seconds: 2
+    fallback:
+      enabled: false
+      yhdm:
+        enabled: false
+        base-url: http://127.0.0.1
+        play-url-template: http://127.0.0.1/?vid=%s
+      silisili:
+        enabled: false
+        base-url: http://127.0.0.1
+        cookie: ""
   llm:
     api-key: ""
     memory-max-messages: 4

@@ -3,6 +3,9 @@ package com.agentcrawler.crawler.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class PluginRule {
     private String name;
@@ -18,6 +21,8 @@ public class PluginRule {
     private String referer = "";
     private boolean usePost = false;
     private boolean useWebview = false;
+    private String cookie = "";
+    private Map<String, String> headers = new LinkedHashMap<>();
     private String searchMode = "xpath";
     private String chapterMode = "xpath";
     private Boolean enabled;
@@ -129,6 +134,22 @@ public class PluginRule {
 
     public void setUseWebview(boolean useWebview) {
         this.useWebview = useWebview;
+    }
+
+    public String getCookie() {
+        return cookie;
+    }
+
+    public void setCookie(String cookie) {
+        this.cookie = cookie == null ? "" : cookie;
+    }
+
+    public Map<String, String> getHeaders() {
+        return headers;
+    }
+
+    public void setHeaders(Map<String, String> headers) {
+        this.headers = headers == null ? new LinkedHashMap<>() : new LinkedHashMap<>(headers);
     }
 
     public String getSearchMode() {

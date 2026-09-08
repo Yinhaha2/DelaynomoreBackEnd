@@ -7,7 +7,6 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Component;
 
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -17,27 +16,23 @@ import java.util.regex.Pattern;
 
 @Component
 public class MediaExtractor {
-    private static final Pattern MEDIA_IN_TEXT = Pattern.compile(
-            "(https?://[^\\s\"'<>]+?\\.(?:m3u8|mp4))|(https?://[^\\s\"'<>]+?/[^\\s\"'<>]*m3u8[^\\s\"'<>]*)",
-            Pattern.CASE_INSENSITIVE
-    );
-    private static final Pattern IFRAME_SRC = Pattern.compile(
-            "<iframe[^>]+src=[\"']([^\"']+)[\"']",
-            Pattern.CASE_INSENSITIVE
-    );
+    private static final Pattern HTTP_IN_TEXT = Pattern.compile("https?://[^\\s\"')]+", Pattern.CASE_INSENSITIVE);
 
     public List<String> extractVideoUrls(String html, String baseUrl) {
         Set<String> urls = new LinkedHashSet<>();
-        collectRegexMatches(html, urls);
+        MediaUrls.harvestAll(html).forEach(urls::add);
         Document document = Jsoup.parse(html, baseUrl);
         for (Element video : document.select("video[src], video source[src]")) {
-            addIfPresent(urls, video.attr("abs:src"));
+            String src = video.attr("abs:src");
+            if (src != null && !src.isBlank()) {
+                urls.add(src);
+            }
         }
         for (Element iframe : document.select("iframe[src]")) {
-            String iframeUrl = iframe.attr("abs:src");
-            addIfPresent(urls, iframeUrl);
-            collectRegexMatches(iframeUrl, urls);
-            decodeEmbeddedMedia(iframeUrl, urls);
+            MediaUrls.harvest(iframe.attr("abs:src"), urls);
+        }
+        for (Element clickable : document.select("[onclick], [onClick]")) {
+            MediaUrls.harvest(clickable.attr("onclick") + clickable.attr("onClick"), urls);
         }
         return new ArrayList<>(urls);
     }
@@ -45,9 +40,18 @@ public class MediaExtractor {
     public List<String> extractImageUrls(String html, String baseUrl) {
         Set<String> urls = new LinkedHashSet<>();
         Document document = Jsoup.parse(html, baseUrl);
-        Elements images = document.select("img[src]");
+        Elements images = document.select("img");
         for (Element image : images) {
-            addIfPresent(urls, image.attr("abs:src"));
+            String found = firstImageAttr(image);
+            if (found.isBlank()) {
+                continue;
+            }
+            String absolute = found.startsWith("http")
+                    ? found
+                    : UrlNormalizer.normalizeEpisodeUrl(baseUrl, found);
+            if (absolute != null && !absolute.isBlank()) {
+                urls.add(absolute);
+            }
         }
         return new ArrayList<>(urls);
     }
@@ -64,31 +68,14 @@ public class MediaExtractor {
         return new ArrayList<>(urls);
     }
 
-    private void decodeEmbeddedMedia(String iframeUrl, Set<String> urls) {
-        URI uri = URI.create(iframeUrl);
-        if (uri.getRawQuery() == null) {
-            return;
-        }
-        for (String part : uri.getRawQuery().split("&")) {
-            collectRegexMatches(part, urls);
-        }
-    }
-
-    private void collectRegexMatches(String text, Set<String> urls) {
-        Matcher matcher = MEDIA_IN_TEXT.matcher(text);
-        while (matcher.find()) {
-            for (int group = 1; group <= matcher.groupCount(); group++) {
-                String value = matcher.group(group);
-                if (value != null && !value.isBlank()) {
-                    urls.add(value.trim());
-                }
+    private static String firstImageAttr(Element image) {
+        for (String attr : List.of("abs:src", "src", "data-src", "data-original", "data-url", "data-lazy")) {
+            String value = image.attr(attr);
+            if (value != null && !value.isBlank() && !value.startsWith("data:")) {
+                return value.trim();
             }
         }
-    }
-
-    private void addIfPresent(Set<String> urls, String value) {
-        if (value != null && !value.isBlank()) {
-            urls.add(UrlNormalizer.normalizeEpisodeUrl(value, value));
-        }
+        Matcher matcher = HTTP_IN_TEXT.matcher(image.attr("style") + " " + image.attr("srcset"));
+        return matcher.find() ? matcher.group() : "";
     }
 }
