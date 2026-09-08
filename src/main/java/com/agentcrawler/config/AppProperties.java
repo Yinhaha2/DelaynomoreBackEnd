@@ -15,8 +15,26 @@ public record AppProperties(
     public record Crawler(
             int maxSearchResults,
             int maxEpisodesPerRoad,
-            int requestTimeoutSeconds
-    ) {}
+            int requestTimeoutSeconds,
+            WebView webview
+    ) {
+        public Crawler {
+            if (webview == null) {
+                webview = new WebView(true, true, 25, 8);
+            }
+        }
+
+        public Crawler(int maxSearchResults, int maxEpisodesPerRoad, int requestTimeoutSeconds) {
+            this(maxSearchResults, maxEpisodesPerRoad, requestTimeoutSeconds, new WebView(false, true, 25, 8));
+        }
+
+        public record WebView(
+                boolean enabled,
+                boolean headless,
+                int navigationTimeoutSeconds,
+                int settleTimeoutSeconds
+        ) {}
+    }
 
     public record Llm(
             String apiKey,

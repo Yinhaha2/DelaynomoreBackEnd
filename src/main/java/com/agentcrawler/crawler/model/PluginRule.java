@@ -17,6 +17,7 @@ public class PluginRule {
     private String userAgent = "";
     private String referer = "";
     private boolean usePost = false;
+    private boolean useWebview = false;
     private String searchMode = "xpath";
     private String chapterMode = "xpath";
     private Boolean enabled;
@@ -119,6 +120,15 @@ public class PluginRule {
 
     public void setUsePost(boolean usePost) {
         this.usePost = usePost;
+    }
+
+    @JsonProperty("useWebview")
+    public boolean isUseWebview() {
+        return useWebview;
+    }
+
+    public void setUseWebview(boolean useWebview) {
+        this.useWebview = useWebview;
     }
 
     public String getSearchMode() {

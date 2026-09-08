@@ -16,6 +16,11 @@ agent:
     max-search-results: 3
     max-episodes-per-road: 5
     request-timeout-seconds: 20
+    webview:
+      enabled: true
+      headless: true
+      navigation-timeout-seconds: 25
+      settle-timeout-seconds: 8
   llm:
     # main 启动时 EnvFileLoader 会从 .env 写入 DEEPSEEK_API_KEY / agent.llm.api-key
     api-key: ${DEEPSEEK_API_KEY:}
