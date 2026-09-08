@@ -22,7 +22,7 @@ class ImageUploadServiceTest {
         AppProperties properties = new AppProperties(
                 "langchain",
                 512,
-                new AppProperties.Crawler(3, 5, 5),
+                new AppProperties.Crawler(3, 5, 5, new AppProperties.Crawler.WebView(false, true, 25, 8)),
                 new AppProperties.Llm("", "https://api.deepseek.com/v1", "deepseek-chat", 4),
                 new AppProperties.Vision("deepseek-v4-flash-vision-exp", "original", 0.7),
                 new AppProperties.Upload(tempDir.toString(), "http://localhost:8000", 33_554_432),

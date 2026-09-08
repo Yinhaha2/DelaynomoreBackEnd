@@ -24,10 +24,6 @@ public record AppProperties(
             }
         }
 
-        public Crawler(int maxSearchResults, int maxEpisodesPerRoad, int requestTimeoutSeconds) {
-            this(maxSearchResults, maxEpisodesPerRoad, requestTimeoutSeconds, new WebView(false, true, 25, 8));
-        }
-
         public record WebView(
                 boolean enabled,
                 boolean headless,
