@@ -5,8 +5,13 @@ import com.agentcrawler.crawler.model.PreparedRuleRequest;
 import com.agentcrawler.crawler.model.PluginRule;
 import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
+import com.agentcrawler.crawler.webview.FetchedPage;
+import com.agentcrawler.crawler.webview.WebViewFetcher;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -16,18 +21,32 @@ import java.util.Map;
 
 @Component
 public class RuleEngine {
+    private static final Logger log = LoggerFactory.getLogger(RuleEngine.class);
+
     private final SiteHttpClient httpClient;
     private final XPathRuleStrategy xpathRuleStrategy;
     private final ApiRuleStrategy apiRuleStrategy;
+    private final WebViewFetcher webViewFetcher;
 
     public RuleEngine(
             SiteHttpClient httpClient,
             XPathRuleStrategy xpathRuleStrategy,
             ApiRuleStrategy apiRuleStrategy
     ) {
+        this(httpClient, xpathRuleStrategy, apiRuleStrategy, null);
+    }
+
+    @Autowired
+    public RuleEngine(
+            SiteHttpClient httpClient,
+            XPathRuleStrategy xpathRuleStrategy,
+            ApiRuleStrategy apiRuleStrategy,
+            WebViewFetcher webViewFetcher
+    ) {
         this.httpClient = httpClient;
         this.xpathRuleStrategy = xpathRuleStrategy;
         this.apiRuleStrategy = apiRuleStrategy;
+        this.webViewFetcher = webViewFetcher;
     }
 
     public List<SearchItem> search(PluginRule rule, String keyword) {
@@ -74,7 +93,19 @@ public class RuleEngine {
     }
 
     public String fetchPage(PluginRule rule, String url) throws IOException {
-        return httpClient.getText(url, buildHeaders(rule, url, false));
+        return fetchPageDetailed(rule, url).html();
+    }
+
+    public FetchedPage fetchPageDetailed(PluginRule rule, String url) throws IOException {
+        Map<String, String> headers = buildHeaders(rule, url, false);
+        if (canUseWebView(rule)) {
+            try {
+                return webViewFetcher.fetch(url, headers);
+            } catch (RuntimeException ex) {
+                log.warn("WebView 抓取失败，回退 OkHttp: {} ({})", url, ex.getMessage());
+            }
+        }
+        return FetchedPage.htmlOnly(httpClient.getText(url, headers));
     }
 
     private String fetchSearch(PluginRule rule, String keyword) throws IOException {
@@ -94,7 +125,7 @@ public class RuleEngine {
                     headers
             );
         }
-        return httpClient.getText(searchUrl, headers);
+        return fetchText(rule, searchUrl, headers);
     }
 
     private String fetchChapters(PluginRule rule, String source) throws IOException {
@@ -106,7 +137,24 @@ public class RuleEngine {
             return httpClient.execute(request, buildHeaders(rule, request.url(), false));
         }
         String chapterUrl = xpathRuleStrategy.buildChapterUrl(rule, source);
-        return httpClient.getText(chapterUrl, buildHeaders(rule, chapterUrl, false));
+        return fetchText(rule, chapterUrl, buildHeaders(rule, chapterUrl, false));
+    }
+
+    private String fetchText(PluginRule rule, String url, Map<String, String> headers) throws IOException {
+        if (canUseWebView(rule)) {
+            try {
+                return webViewFetcher.fetch(url, headers).html();
+            } catch (RuntimeException ex) {
+                log.warn("WebView 抓取失败，回退 OkHttp: {} ({})", url, ex.getMessage());
+            }
+        }
+        return httpClient.getText(url, headers);
+    }
+
+    private boolean canUseWebView(PluginRule rule) {
+        return rule.isUseWebview()
+                && webViewFetcher != null
+                && webViewFetcher.available();
     }
 
     private Map<String, String> buildHeaders(PluginRule rule, String url, boolean includeReferer) {

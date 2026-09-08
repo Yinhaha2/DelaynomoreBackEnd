@@ -3,6 +3,7 @@ package com.agentcrawler.crawler.plugin;
 import com.agentcrawler.crawler.model.PluginRule;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.annotation.PostConstruct;
 import org.springframework.core.io.Resource;
@@ -23,8 +24,18 @@ public class PluginRegistry {
     private final Map<String, PluginRule> pluginsByName = new LinkedHashMap<>();
     private final Map<String, PluginRule> pluginsByHost = new LinkedHashMap<>();
 
-    public PluginRegistry(ObjectMapper objectMapper) {
-        this.objectMapper = objectMapper;
+    public PluginRegistry() {
+        this.objectMapper = kazumiMapper();
+    }
+
+    /**
+     * Kazumi plugin JSON is camelCase ({@code useWebview}, {@code searchList}).
+     * Do not reuse the HTTP SNAKE_CASE ObjectMapper or those fields stay unbound.
+     */
+    static ObjectMapper kazumiMapper() {
+        ObjectMapper mapper = new ObjectMapper();
+        mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        return mapper;
     }
 
     @PostConstruct

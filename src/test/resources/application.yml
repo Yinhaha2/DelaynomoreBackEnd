@@ -5,6 +5,11 @@ agent:
     max-search-results: 3
     max-episodes-per-road: 5
     request-timeout-seconds: 5
+    webview:
+      enabled: false
+      headless: true
+      navigation-timeout-seconds: 8
+      settle-timeout-seconds: 2
   llm:
     api-key: ""
     memory-max-messages: 4

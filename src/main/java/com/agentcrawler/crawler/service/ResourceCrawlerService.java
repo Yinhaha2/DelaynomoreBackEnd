@@ -9,6 +9,7 @@ import com.agentcrawler.crawler.model.PluginRule;
 import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
 import com.agentcrawler.crawler.plugin.PluginRegistry;
+import com.agentcrawler.crawler.webview.FetchedPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -127,9 +128,15 @@ public class ResourceCrawlerService {
                     }
 
                     try {
-                        String pageHtml = ruleEngine.fetchPage(rule, episodeUrl);
+                        FetchedPage page = ruleEngine.fetchPageDetailed(rule, episodeUrl);
+                        String pageHtml = page.html();
                         for (String videoUrl : mediaExtractor.extractVideoUrls(pageHtml, episodeUrl)) {
                             addVideo(videos, seenVideoUrls, episodeName, videoUrl, episodeUrl, road.name());
+                        }
+                        for (String captured : page.mediaUrls()) {
+                            if (captured != null && !captured.isBlank()) {
+                                addVideo(videos, seenVideoUrls, episodeName, captured, episodeUrl, road.name());
+                            }
                         }
                         for (String imageUrl : mediaExtractor.extractImageUrls(pageHtml, episodeUrl)) {
                             addImage(images, seenImageUrls, imageUrl, episodeName);
@@ -139,8 +146,8 @@ public class ResourceCrawlerService {
                                 addVideo(videos, seenVideoUrls, episodeName, linkUrl, episodeUrl, road.name());
                             }
                         }
-                    } catch (Exception ignored) {
-                        // 单个剧集页失败时跳过，继续处理其他线路/剧集
+                    } catch (Exception ex) {
+                        log.warn("站点 {} 剧集页抓取失败 {}: {}", rule.getName(), episodeUrl, userFacingMessage(ex));
                     }
                 }
             }

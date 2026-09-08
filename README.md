@@ -30,6 +30,7 @@ src/main/java/com/agentcrawler/
 │   ├── engine/          # Kazumi 风格 RuleEngine（XPath 搜索 + 章节解析）
 │   ├── media/           # 视频 m3u8/mp4、图片、链接提取
 │   ├── plugin/          # 站点规则注册（plugins/*.json）
+│   ├── webview/         # Playwright Chromium（useWebview 规则）
 │   └── service/         # 定向爬取编排
 ├── service/             # 会话 / 对话业务
 └── store/               # 内存会话存储
@@ -43,6 +44,26 @@ src/main/java/com/agentcrawler/
 - `searchList` / `searchName` / `searchResult` XPath 选择器
 - `chapterRoads` / `chapterResult` 章节线路解析
 - 扩展字段 `searchImage` 用于封面图提取
+- `useWebview: true` 时用 Playwright 渲染页面，并拦截网络里的 `.m3u8` / `.mp4`（以及播放器里的 `player_aaaa.url`）
+
+本机首次使用 WebView 前需要安装 Chromium：
+
+```bash
+mvn exec:java -Dexec.args="install chromium"
+```
+
+云主机 / IDC 出口访问部分站点可能仍是 HTTP 522（源站对机房 IP 不可达），这和本机家宽打开同一域名不是同一条网络路径。`useWebview` 解决的是 **JS 渲染后的 DOM 与播放地址**，不能改变源站是否对当前出口放行。
+
+可在 `application.yml` 关闭浏览器抓取（单元测试默认关闭，避免 CI 拉 Chromium）：
+
+```yaml
+agent:
+  crawler:
+    webview:
+      enabled: false
+```
+
+Chromium 不可用时会自动回退到 OkHttp 静态 HTML。
 
 ### LangChain4j Agent 编排
 
@@ -114,5 +135,4 @@ mvn test
 
 ## 后续扩展
 
-- Playwright 解析需 WebView 的播放页（Kazumi `useWebview` 场景）
 - ChatMemory 持久化到 Redis / DB
