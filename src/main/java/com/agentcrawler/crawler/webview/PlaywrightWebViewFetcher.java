@@ -1,6 +1,7 @@
 package com.agentcrawler.crawler.webview;
 
 import com.agentcrawler.config.AppProperties;
+import com.agentcrawler.crawler.media.MediaUrls;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserType;
 import com.microsoft.playwright.Page;
@@ -19,7 +20,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.regex.Pattern;
 
 /**
  * Headless Chromium fetch for Kazumi {@code useWebview} plugins.
@@ -30,7 +30,6 @@ import java.util.regex.Pattern;
 public class PlaywrightWebViewFetcher implements WebViewFetcher {
 
     private static final Logger log = LoggerFactory.getLogger(PlaywrightWebViewFetcher.class);
-    private static final Pattern MEDIA_URL = Pattern.compile("(?i)\\.(m3u8|mp4)(\\?|$|#)");
 
     private final AppProperties.Crawler.WebView settings;
     private final Object lock = new Object();
@@ -71,8 +70,13 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
                 if (!headers.isEmpty()) {
                     page.setExtraHTTPHeaders(headers);
                 }
-                page.onRequest(request -> captureMedia(request.url(), media));
-                page.onResponse(response -> captureMedia(response.url(), media));
+                page.onRequest(request -> MediaUrls.harvest(request.url(), media));
+                page.onResponse(response -> {
+                    MediaUrls.harvest(response.url(), media);
+                    if (MediaUrls.isVideoContentType(response.headerValue("content-type"))) {
+                        media.add(response.url());
+                    }
+                });
                 int navMs = Math.max(1, settings.navigationTimeoutSeconds()) * 1000;
                 page.setDefaultNavigationTimeout(navMs);
                 Response response = page.navigate(url, new Page.NavigateOptions()
@@ -103,15 +107,6 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
                     new Page.WaitForLoadStateOptions().setTimeout(settleMs));
         } catch (RuntimeException e) {
             log.debug("WebView NETWORKIDLE wait ended: {}", e.getMessage());
-        }
-    }
-
-    private static void captureMedia(String candidate, Set<String> media) {
-        if (candidate == null || candidate.isBlank()) {
-            return;
-        }
-        if (MEDIA_URL.matcher(candidate).find()) {
-            media.add(candidate);
         }
     }
 

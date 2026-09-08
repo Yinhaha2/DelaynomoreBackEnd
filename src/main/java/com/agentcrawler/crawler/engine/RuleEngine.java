@@ -5,6 +5,7 @@ import com.agentcrawler.crawler.model.PreparedRuleRequest;
 import com.agentcrawler.crawler.model.PluginRule;
 import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
+import com.agentcrawler.crawler.nav.HtmlNavigation;
 import com.agentcrawler.crawler.webview.FetchedPage;
 import com.agentcrawler.crawler.webview.WebViewFetcher;
 import com.agentcrawler.core.AppException;
@@ -105,7 +106,7 @@ public class RuleEngine {
                 log.warn("WebView 抓取失败，回退 OkHttp: {} ({})", url, ex.getMessage());
             }
         }
-        return FetchedPage.htmlOnly(httpClient.getText(url, headers));
+        return FetchedPage.htmlOnly(followHtml(url, headers));
     }
 
     private String fetchSearch(PluginRule rule, String keyword) throws IOException {
@@ -148,7 +149,22 @@ public class RuleEngine {
                 log.warn("WebView 抓取失败，回退 OkHttp: {} ({})", url, ex.getMessage());
             }
         }
-        return httpClient.getText(url, headers);
+        return followHtml(url, headers);
+    }
+
+    private String followHtml(String url, Map<String, String> headers) throws IOException {
+        String current = url;
+        String html = httpClient.getText(current, headers);
+        for (int hop = 0; hop < 5; hop++) {
+            var next = HtmlNavigation.nextLocation(html, current);
+            if (next.isEmpty()) {
+                return html;
+            }
+            log.debug("HTML interstitial {} -> {}", current, next.get());
+            current = next.get();
+            html = httpClient.getText(current, headers);
+        }
+        return html;
     }
 
     private boolean canUseWebView(PluginRule rule) {
@@ -171,6 +187,16 @@ public class RuleEngine {
                     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                             + "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             );
+        }
+        if (rule.getCookie() != null && !rule.getCookie().isBlank()) {
+            headers.put("Cookie", rule.getCookie());
+        }
+        if (rule.getHeaders() != null) {
+            rule.getHeaders().forEach((key, value) -> {
+                if (key != null && value != null && !key.isBlank()) {
+                    headers.put(key, value);
+                }
+            });
         }
         return headers;
     }
