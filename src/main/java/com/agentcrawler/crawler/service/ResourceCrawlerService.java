@@ -74,9 +74,10 @@ public class ResourceCrawlerService {
             if (!fallback.enabled() || (dedicated != null && fallback.name().equals(dedicated.name()))) {
                 continue;
             }
+            log.info("插件未拿到播放地址，开始降级到 {}", fallback.name());
             CrawlResourceResult result = safeFallback(fallback, keyword);
             if (hasVideos(result)) {
-                log.info("插件未拿到播放地址，已降级到 {}", fallback.name());
+                log.info("已从 {} 拿到播放地址", fallback.name());
                 return result;
             }
             if (!hasResources(pluginBest) && hasResources(result)) {

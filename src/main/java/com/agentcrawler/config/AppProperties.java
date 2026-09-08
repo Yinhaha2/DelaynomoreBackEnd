@@ -12,6 +12,14 @@ public record AppProperties(
         Upload upload,
         Link link
 ) {
+    public Crawler.WebView webviewSettings() {
+        Crawler configured = crawler;
+        if (configured == null || configured.webview() == null) {
+            return new Crawler.WebView(true, true, 25, 8);
+        }
+        return configured.webview();
+    }
+
     public record Crawler(
             int maxSearchResults,
             int maxEpisodesPerRoad,

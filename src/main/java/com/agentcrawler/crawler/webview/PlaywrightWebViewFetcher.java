@@ -12,9 +12,13 @@ import com.microsoft.playwright.options.WaitUntilState;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -40,21 +44,27 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
     private Browser browser;
 
     public PlaywrightWebViewFetcher(AppProperties properties) {
-        this.settings = properties.crawler().webview();
+        this.settings = properties.webviewSettings();
     }
 
     @Override
     public boolean available() {
+        return settings.enabled() && available;
+    }
+
+    @EventListener(ApplicationReadyEvent.class)
+    public void warmUp() {
         if (!settings.enabled()) {
-            return false;
+            return;
         }
-        ensureStarted();
-        return available;
+        Thread thread = new Thread(this::ensureStarted, "playwright-warmup");
+        thread.setDaemon(true);
+        thread.start();
     }
 
     @Override
     public FetchedPage fetch(String url) {
-        return fetch(url, Map.of());
+        return fetch(url, Collections.emptyMap());
     }
 
     @Override
@@ -83,7 +93,7 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
                         .setWaitUntil(WaitUntilState.DOMCONTENTLOADED)
                         .setTimeout(navMs));
                 if (response != null && response.status() >= 400) {
-                    log.warn("WebView HTTP {} for {}", response.status(), url);
+                    throw new IllegalStateException("HTTP " + response.status() + " for " + url);
                 }
                 waitForSettle(page);
                 capturePlayerAaaa(page, media);
@@ -144,7 +154,7 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
 
     private static Map<String, String> sanitizeHeaders(Map<String, String> extraHeaders) {
         if (extraHeaders == null || extraHeaders.isEmpty()) {
-            return Map.of();
+            return Collections.emptyMap();
         }
         Map<String, String> headers = new LinkedHashMap<>();
         extraHeaders.forEach((key, value) -> {
@@ -169,7 +179,9 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
             }
             started = true;
             try {
-                playwright = Playwright.create();
+                Map<String, String> env = new HashMap<>(System.getenv());
+                env.put("PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD", "1");
+                playwright = Playwright.create(new Playwright.CreateOptions().setEnv(env));
                 browser = playwright.chromium().launch(new BrowserType.LaunchOptions()
                         .setHeadless(settings.headless()));
                 available = true;
