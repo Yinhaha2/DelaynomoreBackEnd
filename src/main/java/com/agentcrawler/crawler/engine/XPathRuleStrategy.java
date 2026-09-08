@@ -99,6 +99,22 @@ public class XPathRuleStrategy {
             return "";
         }
         Element element = Jsoup.parse(nodes.get(0).toString()).body().children().first();
-        return element == null ? "" : element.attr(attr).trim();
+        if (element == null) {
+            return "";
+        }
+        String direct = element.attr(attr).trim();
+        if (!direct.isBlank()) {
+            return direct;
+        }
+        if ("src".equalsIgnoreCase(attr) || "href".equalsIgnoreCase(attr)) {
+            for (String fallback : List.of("data-src", "data-original", "data-url", "data-lazy", "srcset")) {
+                String value = element.attr(fallback).trim();
+                if (!value.isBlank() && !value.startsWith("data:")) {
+                    int comma = value.indexOf(',');
+                    return comma > 0 ? value.substring(0, comma).trim().split("\\s+")[0] : value;
+                }
+            }
+        }
+        return "";
     }
 }

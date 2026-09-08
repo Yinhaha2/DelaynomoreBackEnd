@@ -3,6 +3,7 @@ package com.agentcrawler.crawler.service;
 import com.agentcrawler.config.AppProperties;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.crawler.engine.RuleEngine;
+import com.agentcrawler.crawler.fallback.SiteFallback;
 import com.agentcrawler.crawler.media.MediaExtractor;
 import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.agentcrawler.crawler.model.PluginRule;
@@ -12,6 +13,7 @@ import com.agentcrawler.crawler.plugin.PluginRegistry;
 import com.agentcrawler.crawler.webview.FetchedPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -28,6 +30,7 @@ public class ResourceCrawlerService {
     private final RuleEngine ruleEngine;
     private final MediaExtractor mediaExtractor;
     private final AppProperties properties;
+    private final List<SiteFallback> fallbacks;
 
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
@@ -35,45 +38,129 @@ public class ResourceCrawlerService {
             MediaExtractor mediaExtractor,
             AppProperties properties
     ) {
+        this(pluginRegistry, ruleEngine, mediaExtractor, properties, List.of());
+    }
+
+    @Autowired
+    public ResourceCrawlerService(
+            PluginRegistry pluginRegistry,
+            RuleEngine ruleEngine,
+            MediaExtractor mediaExtractor,
+            AppProperties properties,
+            List<SiteFallback> fallbacks
+    ) {
         this.pluginRegistry = pluginRegistry;
         this.ruleEngine = ruleEngine;
         this.mediaExtractor = mediaExtractor;
         this.properties = properties;
+        this.fallbacks = fallbacks == null ? List.of() : List.copyOf(fallbacks);
     }
 
     public CrawlResourceResult crawl(String keyword, String site) {
-        List<PluginRule> candidates = resolveCandidates(site);
-        if (candidates.isEmpty()) {
-            return CrawlResourceResult.failed(
-                    keyword,
-                    site,
-                    site,
-                    "当前没有可用的检索站点，请稍后再试。"
-            );
+        SiteFallback dedicated = findFallback(site);
+        if (dedicated != null && dedicated.enabled()) {
+            CrawlResourceResult dedicatedResult = safeFallback(dedicated, keyword);
+            if (hasVideos(dedicatedResult)) {
+                return dedicatedResult;
+            }
         }
 
+        CrawlResourceResult pluginBest = crawlPlugins(keyword, site);
+        if (hasVideos(pluginBest)) {
+            return pluginBest;
+        }
+
+        for (SiteFallback fallback : fallbacks) {
+            if (!fallback.enabled() || (dedicated != null && fallback.name().equals(dedicated.name()))) {
+                continue;
+            }
+            CrawlResourceResult result = safeFallback(fallback, keyword);
+            if (hasVideos(result)) {
+                log.info("插件未拿到播放地址，已降级到 {}", fallback.name());
+                return result;
+            }
+            if (!hasResources(pluginBest) && hasResources(result)) {
+                pluginBest = result;
+            }
+        }
+
+        if (hasResources(pluginBest)) {
+            return pluginBest;
+        }
+        if (pluginBest != null && pluginBest.error() != null) {
+            return pluginBest;
+        }
+        return CrawlResourceResult.failed(keyword, site, site, "暂时没有找到可用资源，请稍后再试。");
+    }
+
+    public String availableSites() {
+        List<String> names = new ArrayList<>(pluginRegistry.usableNames());
+        for (SiteFallback fallback : fallbacks) {
+            if (fallback.enabled() && names.stream().noneMatch(name -> name.equalsIgnoreCase(fallback.name()))) {
+                names.add(fallback.name());
+            }
+        }
+        return names.isEmpty() ? "暂无可用站点" : String.join(", ", names);
+    }
+
+    private CrawlResourceResult crawlPlugins(String keyword, String site) {
+        List<PluginRule> candidates = resolveCandidates(site);
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        CrawlResourceResult best = null;
         Exception lastError = null;
         for (PluginRule rule : candidates) {
             try {
-                return crawlWithRule(keyword, site, rule);
+                CrawlResourceResult result = crawlWithRule(keyword, site, rule);
+                if (hasVideos(result)) {
+                    return result;
+                }
+                if (best == null || (!hasResources(best) && hasResources(result))) {
+                    best = result;
+                }
             } catch (Exception ex) {
                 lastError = ex;
                 log.warn("站点 {} 检索「{}」失败: {}", rule.getName(), keyword, userFacingMessage(ex));
             }
         }
-
-        String pluginName = candidates.get(0).getName();
-        return CrawlResourceResult.failed(keyword, site, pluginName, userFacingMessage(lastError));
+        if (best != null) {
+            return best;
+        }
+        return CrawlResourceResult.failed(keyword, site, candidates.get(0).getName(), userFacingMessage(lastError));
     }
 
-    public String availableSites() {
-        List<String> names = pluginRegistry.usableNames();
-        return names.isEmpty() ? "暂无可用站点" : String.join(", ", names);
+    private CrawlResourceResult safeFallback(SiteFallback fallback, String keyword) {
+        try {
+            return fallback.crawl(
+                    keyword,
+                    properties.crawler().maxSearchResults(),
+                    properties.crawler().maxEpisodesPerRoad()
+            );
+        } catch (Exception ex) {
+            log.warn("降级站点 {} 检索「{}」失败: {}", fallback.name(), keyword, userFacingMessage(ex));
+            return CrawlResourceResult.failed(keyword, fallback.name(), fallback.name(), userFacingMessage(ex));
+        }
+    }
+
+    private SiteFallback findFallback(String site) {
+        if (site == null || site.isBlank()) {
+            return null;
+        }
+        for (SiteFallback fallback : fallbacks) {
+            if (fallback.matches(site)) {
+                return fallback;
+            }
+        }
+        return null;
     }
 
     private List<PluginRule> resolveCandidates(String site) {
         List<PluginRule> usable = pluginRegistry.usable();
         if (site == null || site.isBlank()) {
+            return usable;
+        }
+        if (findFallback(site) != null) {
             return usable;
         }
         try {
@@ -187,6 +274,14 @@ public class ResourceCrawlerService {
         return "暂时没有找到可用资源，请稍后再试。";
     }
 
+    private static boolean hasVideos(CrawlResourceResult result) {
+        return result != null && result.videos() != null && !result.videos().isEmpty();
+    }
+
+    private static boolean hasResources(CrawlResourceResult result) {
+        return result != null && result.hasResources();
+    }
+
     private static boolean containsAny(String text, String... tokens) {
         String lower = text.toLowerCase(Locale.ROOT);
         for (String token : tokens) {
@@ -210,7 +305,7 @@ public class ResourceCrawlerService {
             String sourcePage,
             String roadName
     ) {
-        if (seen.add(url)) {
+        if (url != null && !url.isBlank() && seen.add(url)) {
             videos.add(new CrawlResourceResult.VideoResource(title, url, sourcePage, roadName));
         }
     }

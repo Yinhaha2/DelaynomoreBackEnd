@@ -107,6 +107,19 @@ class RuleEngineTest {
         assertEquals(0, server.getRequestCount());
     }
 
+    @Test
+    void searchFollowsHtmlMetaRefresh() {
+        server.enqueue(new MockResponse().setBody(
+                "<html><head><meta http-equiv=\"refresh\" content=\"0;url=/real-search\"></head></html>"
+        ));
+        server.enqueue(new MockResponse().setBody(searchHtml()));
+        PluginRule rule = pluginRule(server.url("/").toString());
+        rule.setSearchURL(server.url("/search?wd=@keyword").toString());
+        List<SearchItem> items = ruleEngine.search(rule, "葬送的芙莉莲");
+        assertEquals(1, items.size());
+        assertEquals(2, server.getRequestCount());
+    }
+
     private static PluginRule pluginRule(String baseUrl) {
         PluginRule rule = new PluginRule();
         rule.setName("mock");

@@ -21,6 +21,16 @@ agent:
       headless: true
       navigation-timeout-seconds: 25
       settle-timeout-seconds: 8
+    fallback:
+      enabled: true
+      yhdm:
+        enabled: true
+        base-url: ${AGENT_YHDM_BASE_URL:http://www.iyinghua.io}
+        play-url-template: ${AGENT_YHDM_PLAY_URL:https://tup.iyinghua.com/?vid=%s}
+      silisili:
+        enabled: true
+        base-url: ${AGENT_SILISILI_BASE_URL:https://www.silisili.link}
+        cookie: ${AGENT_SILISILI_COOKIE:silisili=on}
   llm:
     # main 启动时 EnvFileLoader 会从 .env 写入 DEEPSEEK_API_KEY / agent.llm.api-key
     api-key: ${DEEPSEEK_API_KEY:}

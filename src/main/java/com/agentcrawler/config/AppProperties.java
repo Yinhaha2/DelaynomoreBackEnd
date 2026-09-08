@@ -16,11 +16,15 @@ public record AppProperties(
             int maxSearchResults,
             int maxEpisodesPerRoad,
             int requestTimeoutSeconds,
-            WebView webview
+            WebView webview,
+            Fallback fallback
     ) {
         public Crawler {
             if (webview == null) {
                 webview = new WebView(true, true, 25, 8);
+            }
+            if (fallback == null) {
+                fallback = Fallback.defaults();
             }
         }
 
@@ -30,6 +34,33 @@ public record AppProperties(
                 int navigationTimeoutSeconds,
                 int settleTimeoutSeconds
         ) {}
+
+        public record Fallback(boolean enabled, Yhdm yhdm, Silisili silisili) {
+            public Fallback {
+                if (yhdm == null) {
+                    yhdm = new Yhdm(true, "http://www.iyinghua.io", "https://tup.iyinghua.com/?vid=%s");
+                }
+                if (silisili == null) {
+                    silisili = new Silisili(true, "https://www.silisili.link", "silisili=on");
+                }
+            }
+
+            public static Fallback defaults() {
+                return new Fallback(true, null, null);
+            }
+
+            public static Fallback disabled() {
+                return new Fallback(
+                        false,
+                        new Yhdm(false, "http://www.iyinghua.io", "https://tup.iyinghua.com/?vid=%s"),
+                        new Silisili(false, "https://www.silisili.link", "silisili=on")
+                );
+            }
+
+            public record Yhdm(boolean enabled, String baseUrl, String playUrlTemplate) {}
+
+            public record Silisili(boolean enabled, String baseUrl, String cookie) {}
+        }
     }
 
     public record Llm(
