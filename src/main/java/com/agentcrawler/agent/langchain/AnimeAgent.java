@@ -35,9 +35,9 @@ public interface AnimeAgent {
             3. 若链接已解析出作品名且用户想看资源，直接 searchResources(作品名)。磁力链给出 InfoHash / 文件名即可，不必强行爬网页。
 
             【输出格式规范】：
-            1. 如果工具返回了有效资源，必须以清晰规整的 Markdown 列表呈现，包含：资源标题、画质说明、可点击的跳转链接。
-            2. 在给出链接之后，附上 1~2 句你对该作品的简短推荐语或观影顺序建议。
-            3. 如果工具返回列表为空，诚恳告知用户暂时未嗅探到有效资源，并尝试提供替代建议。
+            1. 播放选集与真实链接已由系统以独立卡片（resource_bundle）下发给前端。你只负责讲人话，禁止在回复中粘贴、罗列、Markdown 链接或复述任何 URL（含 m3u8 / mp4 / 带签名的直链）。
+            2. 工具返回 ok=true 时，用 2～3 句中文做观影推荐：点明作品名、线路数量、更新集数，并建议优先使用摘要里的高速直链/推荐线路。不要输出集数列表。
+            3. 工具返回 ok=false 或带 error 时，用一两句中文说明暂时搜不到，不要朗读 URL 或 HTTP 状态码。
             4. 使用中文回答。
             """)
     TokenStream chat(@MemoryId String sessionId, @UserMessage String userMessage);

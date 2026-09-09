@@ -2,8 +2,6 @@ package com.agentcrawler.streaming;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategies;
-import com.fasterxml.jackson.databind.annotation.JsonNaming;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -81,6 +79,20 @@ public final class SseEncoder {
         }
         if (roadName != null && !roadName.isBlank()) {
             payload.put("road_name", roadName);
+        }
+        return chunk(payload);
+    }
+
+    public static String resourceBundle(Map<String, Object> fields) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "resource_bundle");
+        if (fields != null) {
+            for (Map.Entry<String, Object> entry : fields.entrySet()) {
+                if (entry.getKey() == null || "type".equals(entry.getKey())) {
+                    continue;
+                }
+                payload.put(entry.getKey(), entry.getValue());
+            }
         }
         return chunk(payload);
     }

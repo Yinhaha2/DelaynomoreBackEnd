@@ -99,8 +99,7 @@ public class LangChainStreamingAgent implements AgentHandler {
                         tokenGate.discardIntermediate();
                         String toolName = toolExecution.request().name();
                         if (CRAWL_TOOL_NAMES.contains(toolName)) {
-                            CrawlResultEmitter.emitFromJson(toolExecution.result(), emitter, objectMapper);
-                            syncBlackboardFromCrawl(conversationId, toolExecution.result());
+                            emitBufferedCrawlResult(conversationId, toolExecution.result(), emitter);
                         }
                     })
                     .onComplete(response -> {
@@ -116,11 +115,11 @@ public class LangChainStreamingAgent implements AgentHandler {
                         latch.countDown();
                     })
                     .start();
+            awaitAndFinish(latch, errorRef, failed, messageId, conversationId, userMessage, attachments, needTitle, emitter);
         } finally {
             SessionContextHolder.clear();
+            CrawlResultBuffer.clear(conversationId);
         }
-
-        awaitAndFinish(latch, errorRef, failed, messageId, conversationId, userMessage, attachments, needTitle, emitter);
     }
 
     private String prependAnchor(String conversationId, String userMessage) {
@@ -131,16 +130,38 @@ public class LangChainStreamingAgent implements AgentHandler {
         return anchor + "\n【用户当前提问】\n" + userMessage;
     }
 
-    private void syncBlackboardFromCrawl(String conversationId, String rawResult) {
+    private void emitBufferedCrawlResult(String conversationId, String rawResult, StreamEmitter emitter) {
+        CrawlResourceResult buffered = CrawlResultBuffer.poll(conversationId);
+        if (buffered != null) {
+            CrawlResultEmitter.emit(buffered, emitter);
+            syncBlackboardFromResult(conversationId, buffered);
+            return;
+        }
+        CrawlResultEmitter.emitFromJson(rawResult, emitter, objectMapper);
+        syncBlackboardFromCrawlJson(conversationId, rawResult);
+    }
+
+    private void syncBlackboardFromCrawlJson(String conversationId, String rawResult) {
         try {
             CrawlResourceResult result = objectMapper.readValue(rawResult, CrawlResourceResult.class);
-            List<String> titles = new ArrayList<>();
-            result.videos().forEach(v -> titles.add(v.title()));
-            result.links().forEach(l -> titles.add(l.title()));
-            blackboardService.syncFromSearchResults(conversationId, result.keyword(), titles);
+            syncBlackboardFromResult(conversationId, result);
         } catch (Exception ignored) {
-            // 黑板同步失败不影响主流程
+            // 摘要 JSON 无法还原全量结果时跳过黑板同步
         }
+    }
+
+    private void syncBlackboardFromResult(String conversationId, CrawlResourceResult result) {
+        if (result == null) {
+            return;
+        }
+        List<String> titles = new ArrayList<>();
+        if (result.videos() != null) {
+            result.videos().forEach(v -> titles.add(v.title()));
+        }
+        if (result.links() != null) {
+            result.links().forEach(l -> titles.add(l.title()));
+        }
+        blackboardService.syncFromSearchResults(conversationId, result.keyword(), titles);
     }
 
     private void streamWithHeuristic(
@@ -230,10 +251,7 @@ public class LangChainStreamingAgent implements AgentHandler {
             result.links().forEach(l -> titles.add(l.title()));
             blackboardService.syncFromSearchResults(conversationId, result.keyword(), titles);
             if (!result.hasResources()) {
-                String message = result.error() == null || result.error().isBlank()
-                        ? "未提取到可用资源，请更换关键词后重试。"
-                        : result.error();
-                emitter.text(message);
+                CrawlResultEmitter.emit(result, emitter, true);
                 return true;
             }
             CrawlResultEmitter.emit(result, emitter);

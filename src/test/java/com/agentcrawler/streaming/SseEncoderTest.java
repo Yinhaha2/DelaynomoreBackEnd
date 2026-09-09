@@ -18,4 +18,19 @@ class SseEncoderTest {
         String frame = SseEncoder.done("msg_1", "conv_1", null);
         assertThat(frame).doesNotContain("\"title\"");
     }
+
+    @Test
+    void resourceBundleUsesChunkEventAndSnakeCaseFields() {
+        String frame = SseEncoder.resourceBundle(java.util.Map.of(
+                "anime_title", "鬼灭之刃",
+                "plugin_name", "SiliSili",
+                "current_episodes_count", 5,
+                "sources", java.util.List.of()
+        ));
+        assertThat(frame).startsWith("event: chunk\n");
+        assertThat(frame).contains("\"type\":\"resource_bundle\"");
+        assertThat(frame).contains("\"anime_title\":\"鬼灭之刃\"");
+        assertThat(frame).contains("\"current_episodes_count\":5");
+        assertThat(frame).doesNotContain("\"type\":\"type\"");
+    }
 }

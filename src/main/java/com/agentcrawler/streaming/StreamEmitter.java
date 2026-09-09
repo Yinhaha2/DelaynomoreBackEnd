@@ -4,6 +4,7 @@ import com.agentcrawler.core.ErrorCode;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 public class StreamEmitter {
@@ -36,6 +37,10 @@ public class StreamEmitter {
 
     public void video(String url, String title, String format, String sourcePage, String roadName) {
         frameConsumer.accept(SseEncoder.video(url, title, format, sourcePage, roadName));
+    }
+
+    public void resourceBundle(Map<String, Object> payload) {
+        frameConsumer.accept(SseEncoder.resourceBundle(payload));
     }
 
     public void done(String messageId, String conversationId) {

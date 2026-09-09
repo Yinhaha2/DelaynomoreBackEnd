@@ -104,7 +104,7 @@ Chromium 不可用时会自动回退到 OkHttp 静态 HTML。
 - `keyword`：搜索关键词（番剧名、季数等）
 - `site`：插件名（如 `DM84`）或站点 baseURL，默认 `DM84`
 
-Agent 会将爬取结果转为 SSE 的 `text_delta` / `video` / `link` / `image` 块推送给前端。
+Agent 会将爬取结果转为 SSE 的 `resource_bundle`（按线路分组的选集）以及兼容用的 `video` / `link` / `image` 块；`text_delta` 只承载短推荐语，不再倾倒播放 URL。
 
 ### 链接前置解析
 
