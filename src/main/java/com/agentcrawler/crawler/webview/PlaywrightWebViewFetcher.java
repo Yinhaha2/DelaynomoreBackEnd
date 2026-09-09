@@ -1,6 +1,7 @@
 package com.agentcrawler.crawler.webview;
 
 import com.agentcrawler.config.AppProperties;
+import com.agentcrawler.config.CrawlerReliabilityProperties;
 import com.agentcrawler.crawler.media.MediaUrls;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserType;
@@ -24,6 +25,8 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Headless Chromium fetch for Kazumi {@code useWebview} plugins.
@@ -36,6 +39,8 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
     private static final Logger log = LoggerFactory.getLogger(PlaywrightWebViewFetcher.class);
 
     private final AppProperties.Crawler.WebView settings;
+    private final Semaphore pageSlots;
+    private final int acquireTimeoutSeconds;
     private final Object lock = new Object();
 
     private volatile boolean started;
@@ -43,8 +48,11 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
     private Playwright playwright;
     private Browser browser;
 
-    public PlaywrightWebViewFetcher(AppProperties properties) {
+    public PlaywrightWebViewFetcher(AppProperties properties, CrawlerReliabilityProperties reliability) {
         this.settings = properties.webviewSettings();
+        int permits = reliability == null ? 2 : Math.max(1, reliability.playwrightMaxConcurrent());
+        this.pageSlots = new Semaphore(permits);
+        this.acquireTimeoutSeconds = Math.max(1, settings.navigationTimeoutSeconds());
     }
 
     @Override
@@ -72,8 +80,24 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
         if (!available()) {
             throw new IllegalStateException("Playwright WebView is not available");
         }
-        synchronized (lock) {
-            Page page = browser.newPage();
+        boolean acquired;
+        try {
+            acquired = pageSlots.tryAcquire(acquireTimeoutSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Playwright bulkhead interrupted");
+        }
+        if (!acquired) {
+            throw new IllegalStateException("Playwright bulkhead exhausted");
+        }
+        try {
+            Page page;
+            synchronized (lock) {
+                if (browser == null) {
+                    throw new IllegalStateException("Playwright WebView is not available");
+                }
+                page = browser.newPage();
+            }
             Set<String> media = new LinkedHashSet<>();
             try {
                 Map<String, String> headers = sanitizeHeaders(extraHeaders);
@@ -101,8 +125,14 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
                 log.info("WebView fetched {} ({} chars, {} media urls)", url, html.length(), media.size());
                 return new FetchedPage(html, List.copyOf(media));
             } finally {
-                page.close();
+                try {
+                    page.close();
+                } catch (RuntimeException ignored) {
+                    // already closed
+                }
             }
+        } finally {
+            pageSlots.release();
         }
     }
 

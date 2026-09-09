@@ -10,6 +10,8 @@ agent:
       headless: true
       navigation-timeout-seconds: 8
       settle-timeout-seconds: 2
+    reliability:
+      enabled: false
     fallback:
       enabled: false
       yhdm:
