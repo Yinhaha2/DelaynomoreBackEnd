@@ -81,9 +81,11 @@ class ApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: chunk")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"text_delta\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"resource_bundle\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"video\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"link\"")))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("\"type\":\"image\"")))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("第1集 =>"))))
                 .andExpect(content().string(org.hamcrest.Matchers.containsString("event: done")));
     }
 

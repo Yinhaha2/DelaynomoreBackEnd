@@ -1,5 +1,6 @@
 package com.agentcrawler.agent.langchain;
 
+import com.agentcrawler.agent.session.SessionContextHolder;
 import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.agentcrawler.crawler.service.ResourceCrawlerService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +25,8 @@ public class ResourceCrawlTools {
             keyword 必须是用户当前要找的作品名，禁止擅自换成其他作品。
             site 为站点插件名（如 DM84、YHDM、SiliSili）。用户未指定时传 DM84。
             插件站点拿不到播放地址时，后端会自动降级到樱花动漫 / SiliSili，无需再换 site 重试。
+            成功时只返回精炼摘要（作品名、线路数、线路名、更新集数），不含任何播放 URL。
+            完整选集已由系统直接推给前端卡片，你只需用 2～3 句中文做观影推荐，禁止复述或编造链接。
             本工具不会抛异常：失败时 JSON 里会有 error 字段，请据此用一两句中文告知用户，不要朗读 URL 或 HTTP 状态码。
             """)
     public String searchResources(
@@ -44,10 +47,11 @@ public class ResourceCrawlTools {
                     ResourceCrawlerService.userFacingMessage(ex)
             );
         }
+        CrawlResultBuffer.push(SessionContextHolder.get(), result);
         try {
-            return objectMapper.writeValueAsString(result);
+            return objectMapper.writeValueAsString(CrawlToolSummary.from(result));
         } catch (Exception ex) {
-            return "{\"keyword\":\"" + resolvedKeyword + "\",\"error\":\"检索结果序列化失败\"}";
+            return "{\"ok\":false,\"title\":\"" + resolvedKeyword + "\",\"error\":\"检索结果序列化失败\"}";
         }
     }
 
