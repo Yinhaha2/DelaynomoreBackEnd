@@ -24,6 +24,15 @@ agent:
       headless: true
       navigation-timeout-seconds: 25
       settle-timeout-seconds: 8
+    reliability:
+      enabled: true
+      failure-window-seconds: 60
+      min-samples: 5
+      open-after-failures: 5
+      failure-rate-threshold: 0.5
+      open-wait-seconds: 180
+      probe-interval-seconds: 30
+      playwright-max-concurrent: 2
     fallback:
       enabled: true
       yhdm:

@@ -10,6 +10,10 @@ import com.agentcrawler.crawler.model.PluginRule;
 import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
 import com.agentcrawler.crawler.plugin.PluginRegistry;
+import com.agentcrawler.crawler.reliability.CrawlSingleflight;
+import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
+import com.agentcrawler.crawler.reliability.UpstreamFailureClassifier;
+import com.agentcrawler.crawler.reliability.UpstreamKeys;
 import com.agentcrawler.crawler.webview.FetchedPage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,6 +35,8 @@ public class ResourceCrawlerService {
     private final MediaExtractor mediaExtractor;
     private final AppProperties properties;
     private final List<SiteFallback> fallbacks;
+    private final SiteCircuitBoard circuitBoard;
+    private final CrawlSingleflight singleflight;
 
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
@@ -41,7 +47,6 @@ public class ResourceCrawlerService {
         this(pluginRegistry, ruleEngine, mediaExtractor, properties, List.of());
     }
 
-    @Autowired
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
             RuleEngine ruleEngine,
@@ -49,19 +54,52 @@ public class ResourceCrawlerService {
             AppProperties properties,
             List<SiteFallback> fallbacks
     ) {
+        this(
+                pluginRegistry,
+                ruleEngine,
+                mediaExtractor,
+                properties,
+                fallbacks,
+                SiteCircuitBoard.disabled(),
+                CrawlSingleflight.direct()
+        );
+    }
+
+    @Autowired
+    public ResourceCrawlerService(
+            PluginRegistry pluginRegistry,
+            RuleEngine ruleEngine,
+            MediaExtractor mediaExtractor,
+            AppProperties properties,
+            List<SiteFallback> fallbacks,
+            SiteCircuitBoard circuitBoard,
+            CrawlSingleflight singleflight
+    ) {
         this.pluginRegistry = pluginRegistry;
         this.ruleEngine = ruleEngine;
         this.mediaExtractor = mediaExtractor;
         this.properties = properties;
         this.fallbacks = fallbacks == null ? List.of() : List.copyOf(fallbacks);
+        this.circuitBoard = circuitBoard == null ? SiteCircuitBoard.disabled() : circuitBoard;
+        this.singleflight = singleflight == null ? CrawlSingleflight.direct() : singleflight;
     }
 
     public CrawlResourceResult crawl(String keyword, String site) {
+        return singleflight.run(CrawlSingleflight.key(site, keyword), () -> crawlUncoalesced(keyword, site));
+    }
+
+    CrawlResourceResult crawlUncoalesced(String keyword, String site) {
+        int skipped = 0;
         SiteFallback dedicated = findFallback(site);
         if (dedicated != null && dedicated.enabled()) {
-            CrawlResourceResult dedicatedResult = safeFallback(dedicated, keyword);
-            if (hasVideos(dedicatedResult)) {
-                return dedicatedResult;
+            if (!circuitBoard.allowRequest(UpstreamKeys.fallback(dedicated.name()))) {
+                skipped++;
+                log.info("跳过熔断中的降级站点 {}", dedicated.name());
+            } else {
+                CrawlResourceResult dedicatedResult = safeFallback(dedicated, keyword);
+                if (hasVideos(dedicatedResult)) {
+                    return dedicatedResult;
+                }
             }
         }
 
@@ -72,6 +110,11 @@ public class ResourceCrawlerService {
 
         for (SiteFallback fallback : fallbacks) {
             if (!fallback.enabled() || (dedicated != null && fallback.name().equals(dedicated.name()))) {
+                continue;
+            }
+            if (!circuitBoard.allowRequest(UpstreamKeys.fallback(fallback.name()))) {
+                skipped++;
+                log.info("跳过熔断中的降级站点 {}", fallback.name());
                 continue;
             }
             log.info("插件未拿到播放地址，开始降级到 {}", fallback.name());
@@ -91,7 +134,10 @@ public class ResourceCrawlerService {
         if (pluginBest != null && pluginBest.error() != null) {
             return pluginBest;
         }
-        return CrawlResourceResult.failed(keyword, site, site, "暂时没有找到可用资源，请稍后再试。");
+        String message = skipped > 0 && circuitBoard.enabled()
+                ? "检索站点暂时不稳定，请稍后再试。"
+                : "暂时没有找到可用资源，请稍后再试。";
+        return CrawlResourceResult.failed(keyword, site, site, message);
     }
 
     public String availableSites() {
@@ -111,9 +157,17 @@ public class ResourceCrawlerService {
         }
         CrawlResourceResult best = null;
         Exception lastError = null;
+        int skipped = 0;
         for (PluginRule rule : candidates) {
+            String key = UpstreamKeys.plugin(rule.getName());
+            if (!circuitBoard.allowRequest(key)) {
+                skipped++;
+                log.info("跳过熔断中的插件 {}", rule.getName());
+                continue;
+            }
             try {
                 CrawlResourceResult result = crawlWithRule(keyword, site, rule);
+                recordUpstreamOutcome(key, result, null);
                 if (hasVideos(result)) {
                     return result;
                 }
@@ -122,25 +176,49 @@ public class ResourceCrawlerService {
                 }
             } catch (Exception ex) {
                 lastError = ex;
+                recordUpstreamOutcome(key, null, ex);
                 log.warn("站点 {} 检索「{}」失败: {}", rule.getName(), keyword, userFacingMessage(ex));
             }
         }
         if (best != null) {
             return best;
         }
+        if (skipped > 0 && skipped == candidates.size()) {
+            return CrawlResourceResult.failed(keyword, site, candidates.get(0).getName(), "检索站点暂时不稳定，请稍后再试。");
+        }
         return CrawlResourceResult.failed(keyword, site, candidates.get(0).getName(), userFacingMessage(lastError));
     }
 
     private CrawlResourceResult safeFallback(SiteFallback fallback, String keyword) {
+        String key = UpstreamKeys.fallback(fallback.name());
         try {
-            return fallback.crawl(
+            CrawlResourceResult result = fallback.crawl(
                     keyword,
                     properties.crawler().maxSearchResults(),
                     properties.crawler().maxEpisodesPerRoad()
             );
+            recordUpstreamOutcome(key, result, null);
+            return result;
         } catch (Exception ex) {
+            recordUpstreamOutcome(key, null, ex);
             log.warn("降级站点 {} 检索「{}」失败: {}", fallback.name(), keyword, userFacingMessage(ex));
             return CrawlResourceResult.failed(keyword, fallback.name(), fallback.name(), userFacingMessage(ex));
+        }
+    }
+
+    private void recordUpstreamOutcome(String key, CrawlResourceResult result, Exception error) {
+        if (error != null) {
+            if (UpstreamFailureClassifier.isInfrastructureFailure(error)) {
+                circuitBoard.recordFailure(key);
+            } else {
+                circuitBoard.recordSuccess(key);
+            }
+            return;
+        }
+        if (UpstreamFailureClassifier.isInfrastructureFailure(result)) {
+            circuitBoard.recordFailure(key);
+        } else {
+            circuitBoard.recordSuccess(key);
         }
     }
 

@@ -14,4 +14,9 @@ public interface SiteFallback {
     boolean matches(String site);
 
     CrawlResourceResult crawl(String keyword, int maxSearchResults, int maxEpisodesPerRoad);
+
+    /** Cheap GET against the site home/search entry. Must not fetch playlists. */
+    default boolean probe() {
+        return false;
+    }
 }

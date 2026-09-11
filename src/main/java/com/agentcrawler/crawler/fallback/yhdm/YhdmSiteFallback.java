@@ -64,6 +64,18 @@ public class YhdmSiteFallback implements SiteFallback {
     }
 
     @Override
+    public boolean probe() {
+        if (!enabled()) {
+            return false;
+        }
+        String base = FallbackHttp.trimSlash(settings.baseUrl());
+        if (base.isBlank()) {
+            return false;
+        }
+        return httpClient.probeGet(base + "/", FallbackHttp.headers(base, ""));
+    }
+
+    @Override
     public CrawlResourceResult crawl(String keyword, int maxSearchResults, int maxEpisodesPerRoad) {
         String base = FallbackHttp.trimSlash(settings.baseUrl());
         Map<String, String> headers = FallbackHttp.headers(base, "");

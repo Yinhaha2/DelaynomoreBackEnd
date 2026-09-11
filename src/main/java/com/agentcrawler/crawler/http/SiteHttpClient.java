@@ -31,6 +31,24 @@ public class SiteHttpClient {
                 .build();
     }
 
+    /**
+     * Cheap health check: true only on HTTP 2xx. Timeouts and 5xx return false without throwing.
+     */
+    public boolean probeGet(String url, Map<String, String> headers) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        Request.Builder builder = new Request.Builder().url(url).get();
+        if (headers != null) {
+            headers.forEach(builder::header);
+        }
+        try (Response response = client.newCall(builder.build()).execute()) {
+            return response.isSuccessful();
+        } catch (Exception ex) {
+            return false;
+        }
+    }
+
     public String getText(String url, Map<String, String> headers) throws IOException {
         Request.Builder builder = new Request.Builder().url(url).get();
         headers.forEach(builder::header);

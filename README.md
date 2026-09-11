@@ -36,6 +36,7 @@ src/main/java/com/agentcrawler/
 │   ├── plugin/          # 站点规则注册（plugins/*.json）
 │   ├── webview/         # Playwright Chromium（useWebview 规则）
 │   ├── fallback/        # YHDM / SiliSili 专用降级解析（插件拿不到播放地址时）
+│   ├── reliability/     # 按上游熔断、单飞、后台嗅探
 │   └── service/         # 定向爬取编排
 ├── service/             # 会话 / 对话业务
 └── store/               # 内存会话存储
@@ -88,6 +89,24 @@ agent:
 ```
 
 Chromium 不可用时会自动回退到 OkHttp 静态 HTML。
+
+### 熔断、单飞与 Playwright 舱壁（P0）
+
+按上游（`plugin:DM84` / `fallback:YHDM` / `fallback:SiliSili`）隔离：1 分钟内 5 次超时或 5xx 则打开熔断，**用户请求直接跳过该源**，去打其它线路。空搜（这部番没有）不算失败。冷却约 3 分钟后由后台定时任务对站点首页做一次 canary GET，成功才关闭熔断，嗅探不走用户 SSE。
+
+同一 `site + keyword` 的并发检索会合并成一次真实爬取（singleflight，不是缓存）。Playwright 同时最多 2 个页面，挤不进去时回退 OkHttp。
+
+```yaml
+agent:
+  crawler:
+    reliability:
+      enabled: true
+      open-wait-seconds: 180
+      probe-interval-seconds: 30
+      playwright-max-concurrent: 2
+```
+
+单元测试默认 `reliability.enabled: false`。
 
 ### LangChain4j Agent 编排
 

@@ -1,6 +1,7 @@
 package com.agentcrawler.crawler.service;
 
 import com.agentcrawler.config.AppProperties;
+import com.agentcrawler.config.CrawlerReliabilityProperties;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
 import com.agentcrawler.crawler.engine.RuleEngine;
@@ -11,6 +12,9 @@ import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
 import com.agentcrawler.crawler.plugin.PluginRegistry;
 import com.agentcrawler.crawler.fallback.SiteFallback;
+import com.agentcrawler.crawler.reliability.CrawlSingleflight;
+import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
+import com.agentcrawler.crawler.reliability.UpstreamKeys;
 import com.agentcrawler.crawler.webview.FetchedPage;
 import org.junit.jupiter.api.Test;
 
@@ -130,5 +134,78 @@ class ResourceCrawlerServiceTest {
         CrawlResourceResult result = service.crawl("芙莉莲", "DM84");
         assertEquals("YHDM", result.pluginName());
         assertEquals("https://cdn.example/a.m3u8", result.videos().get(0).url());
+    }
+
+    @Test
+    void skipsOpenPluginCircuitAndUsesFallback() {
+        PluginRegistry registry = mock(PluginRegistry.class);
+        RuleEngine engine = mock(RuleEngine.class);
+        MediaExtractor extractor = mock(MediaExtractor.class);
+        AppProperties properties = testProperties();
+        PluginRule rule = new PluginRule();
+        rule.setName("DM84");
+        when(registry.usable()).thenReturn(List.of(rule));
+        when(registry.resolve("DM84")).thenReturn(rule);
+
+        SiteCircuitBoard board = new SiteCircuitBoard(CrawlerReliabilityProperties.defaults());
+        for (int i = 0; i < 5; i++) {
+            board.recordFailure(UpstreamKeys.plugin("DM84"));
+        }
+
+        SiteFallback yhdm = mock(SiteFallback.class);
+        when(yhdm.name()).thenReturn("YHDM");
+        when(yhdm.enabled()).thenReturn(true);
+        when(yhdm.matches(any())).thenReturn(false);
+        when(yhdm.crawl("芙莉莲", 3, 5)).thenReturn(new CrawlResourceResult(
+                "芙莉莲",
+                "YHDM",
+                "YHDM",
+                List.of(new CrawlResourceResult.VideoResource("第1集", "https://cdn.example/a.m3u8", "http://y/v/1", "默认播放列表")),
+                List.of(),
+                List.of()
+        ));
+
+        ResourceCrawlerService service = new ResourceCrawlerService(
+                registry, engine, extractor, properties, List.of(yhdm), board, CrawlSingleflight.direct()
+        );
+        CrawlResourceResult result = service.crawl("芙莉莲", "DM84");
+        assertEquals("YHDM", result.pluginName());
+        org.mockito.Mockito.verify(engine, org.mockito.Mockito.never()).search(any(), any());
+    }
+
+    @Test
+    void titleMissDoesNotOpenPluginCircuit() {
+        PluginRegistry registry = mock(PluginRegistry.class);
+        RuleEngine engine = mock(RuleEngine.class);
+        MediaExtractor extractor = mock(MediaExtractor.class);
+        AppProperties properties = testProperties();
+        PluginRule rule = new PluginRule();
+        rule.setName("DM84");
+        when(registry.usable()).thenReturn(List.of(rule));
+        when(registry.resolve("DM84")).thenReturn(rule);
+        when(engine.search(rule, "不存在的番")).thenThrow(
+                new AppException(ErrorCode.CRAWL_FAILED, "站点 DM84 未找到匹配结果")
+        );
+
+        SiteCircuitBoard board = new SiteCircuitBoard(CrawlerReliabilityProperties.defaults());
+        ResourceCrawlerService service = new ResourceCrawlerService(
+                registry, engine, extractor, properties, List.of(), board, CrawlSingleflight.direct()
+        );
+        for (int i = 0; i < 8; i++) {
+            service.crawl("不存在的番", "DM84");
+        }
+        assertFalse(board.isOpen(UpstreamKeys.plugin("DM84")));
+    }
+
+    private static AppProperties testProperties() {
+        return new AppProperties(
+                "langchain",
+                512,
+                new AppProperties.Crawler(3, 5, 5, new AppProperties.Crawler.WebView(false, true, 25, 8), AppProperties.Crawler.Fallback.disabled()),
+                new AppProperties.Llm("", "https://api.deepseek.com/v1", "deepseek-chat", 4),
+                new AppProperties.Vision("deepseek-v4-flash-vision-exp", "original", 0.7),
+                new AppProperties.Upload("./data/uploads", "http://localhost:8000", 33_554_432),
+                new AppProperties.Link(5, 3, 0.65, true)
+        );
     }
 }
