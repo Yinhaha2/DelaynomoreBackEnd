@@ -202,7 +202,7 @@ class ResourceCrawlerServiceTest {
     }
 
     @Test
-    void secondCrawlHitsPlayCacheAndSkipsEngine() {
+    void secondCrawlHitsPlayCacheAndSkipsEngine() throws Exception {
         PluginRegistry registry = mock(PluginRegistry.class);
         RuleEngine engine = mock(RuleEngine.class);
         MediaExtractor extractor = mock(MediaExtractor.class);

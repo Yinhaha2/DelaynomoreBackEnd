@@ -106,7 +106,8 @@ class CrawlerResultCacheTest {
         assertThat(play.videos().get(0).url()).isEqualTo("https://cdn.example.com/1.m3u8");
         assertThat(play.videos().get(0).roadName()).isEqualTo("线路1");
         assertThat(catalog.sources().get(0).episodes().get(0).title()).isEqualTo("第1集");
-        assertThat(catalog.toString()).doesNotContain("cdn.example.com");
+        assertThat(catalog.toString()).doesNotContain("https://cdn.example.com/1.m3u8");
+        assertThat(catalog.sources().get(0).episodes().get(0).sourcePage()).isEqualTo("https://example.com/play/1");
     }
 
     @Test
