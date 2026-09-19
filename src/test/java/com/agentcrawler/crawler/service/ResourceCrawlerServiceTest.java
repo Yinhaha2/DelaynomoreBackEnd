@@ -1,6 +1,7 @@
 package com.agentcrawler.crawler.service;
 
 import com.agentcrawler.config.AppProperties;
+import com.agentcrawler.config.CrawlerCacheProperties;
 import com.agentcrawler.config.CrawlerReliabilityProperties;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.core.ErrorCode;
@@ -12,6 +13,8 @@ import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
 import com.agentcrawler.crawler.plugin.PluginRegistry;
 import com.agentcrawler.crawler.fallback.SiteFallback;
+import com.agentcrawler.crawler.cache.CaffeineCrawlerResultCache;
+import com.agentcrawler.crawler.cache.CrawlCacheKeys;
 import com.agentcrawler.crawler.reliability.CrawlSingleflight;
 import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
 import com.agentcrawler.crawler.reliability.UpstreamKeys;
@@ -21,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
@@ -195,6 +199,78 @@ class ResourceCrawlerServiceTest {
             service.crawl("不存在的番", "DM84");
         }
         assertFalse(board.isOpen(UpstreamKeys.plugin("DM84")));
+    }
+
+    @Test
+    void secondCrawlHitsPlayCacheAndSkipsEngine() throws Exception {
+        PluginRegistry registry = mock(PluginRegistry.class);
+        RuleEngine engine = mock(RuleEngine.class);
+        MediaExtractor extractor = mock(MediaExtractor.class);
+        AppProperties properties = testProperties();
+        PluginRule rule = new PluginRule();
+        rule.setName("DM84");
+        when(registry.usable()).thenReturn(List.of(rule));
+        when(registry.resolve("DM84")).thenReturn(rule);
+
+        SearchItem item = new SearchItem("芙莉莲", "http://example.test/detail/1", "");
+        when(engine.search(rule, "芙莉莲")).thenReturn(List.of(item));
+        when(engine.queryChapters(rule, item.src())).thenReturn(List.of(
+                new Road("线路1", List.of("第1集"), List.of("http://example.test/play/1"))
+        ));
+        when(engine.fetchPageDetailed(rule, "http://example.test/play/1"))
+                .thenReturn(new FetchedPage("<html></html>", List.of("https://cdn.example/a.m3u8")));
+        when(extractor.extractVideoUrls(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+        when(extractor.extractImageUrls(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+        when(extractor.extractPageLinks(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+
+        CaffeineCrawlerResultCache cache = new CaffeineCrawlerResultCache(CrawlerCacheProperties.caffeineOnly());
+        ResourceCrawlerService service = new ResourceCrawlerService(
+                registry,
+                engine,
+                extractor,
+                properties,
+                List.of(),
+                SiteCircuitBoard.disabled(),
+                CrawlSingleflight.direct(),
+                cache
+        );
+        CrawlResourceResult first = service.crawl("芙莉莲", "DM84");
+        CrawlResourceResult second = service.crawl("芙莉莲", "DM84");
+        assertEquals(first.videos().get(0).url(), second.videos().get(0).url());
+        org.mockito.Mockito.verify(engine, org.mockito.Mockito.times(1)).search(rule, "芙莉莲");
+        assertThat(cache.getCatalog(CrawlCacheKeys.lookup("DM84", "芙莉莲"))).isNotNull();
+        assertThat(cache.getCatalog(CrawlCacheKeys.lookup("DM84", "芙莉莲")).toString())
+                .doesNotContain("cdn.example/a.m3u8");
+    }
+
+    @Test
+    void failedCrawlIsNotCached() {
+        PluginRegistry registry = mock(PluginRegistry.class);
+        RuleEngine engine = mock(RuleEngine.class);
+        MediaExtractor extractor = mock(MediaExtractor.class);
+        PluginRule rule = new PluginRule();
+        rule.setName("DM84");
+        when(registry.usable()).thenReturn(List.of(rule));
+        when(registry.resolve("DM84")).thenReturn(rule);
+        when(engine.search(rule, "没有这部")).thenThrow(
+                new AppException(ErrorCode.CRAWL_FAILED, "站点 DM84 未找到匹配结果")
+        );
+
+        CaffeineCrawlerResultCache cache = new CaffeineCrawlerResultCache(CrawlerCacheProperties.caffeineOnly());
+        ResourceCrawlerService service = new ResourceCrawlerService(
+                registry,
+                engine,
+                extractor,
+                testProperties(),
+                List.of(),
+                SiteCircuitBoard.disabled(),
+                CrawlSingleflight.direct(),
+                cache
+        );
+        service.crawl("没有这部", "DM84");
+        assertThat(cache.getPlay(CrawlCacheKeys.lookup("DM84", "没有这部"))).isNull();
+        service.crawl("没有这部", "DM84");
+        org.mockito.Mockito.verify(engine, org.mockito.Mockito.times(2)).search(rule, "没有这部");
     }
 
     private static AppProperties testProperties() {

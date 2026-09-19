@@ -33,6 +33,18 @@ agent:
       open-wait-seconds: 180
       probe-interval-seconds: 30
       playwright-max-concurrent: 2
+    cache:
+      enabled: true
+      play-ttl-seconds: 600
+      catalog-ttl-seconds: 28800
+      key-prefix: acrawl
+      redis:
+        enabled: ${AGENT_REDIS_ENABLED:false}
+        host: ${AGENT_REDIS_HOST:127.0.0.1}
+        port: ${AGENT_REDIS_PORT:6379}
+        database: ${AGENT_REDIS_DB:0}
+        password: ${AGENT_REDIS_PASSWORD:}
+        timeout-ms: 2000
     fallback:
       enabled: true
       yhdm:

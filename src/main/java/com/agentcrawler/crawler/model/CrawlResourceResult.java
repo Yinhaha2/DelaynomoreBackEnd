@@ -1,7 +1,10 @@
 package com.agentcrawler.crawler.model;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record CrawlResourceResult(
         String keyword,
         String site,
@@ -40,9 +43,12 @@ public record CrawlResourceResult(
                 || (images != null && !images.isEmpty());
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record VideoResource(String title, String url, String sourcePage, String roadName) {}
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record LinkResource(String title, String url, String description) {}
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public record ImageResource(String url, String alt) {}
 }

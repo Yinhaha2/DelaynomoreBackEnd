@@ -12,6 +12,10 @@ agent:
       settle-timeout-seconds: 2
     reliability:
       enabled: false
+    cache:
+      enabled: true
+      redis:
+        enabled: false
     fallback:
       enabled: false
       yhdm:

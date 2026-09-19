@@ -10,6 +10,9 @@ import com.agentcrawler.crawler.model.PluginRule;
 import com.agentcrawler.crawler.model.Road;
 import com.agentcrawler.crawler.model.SearchItem;
 import com.agentcrawler.crawler.plugin.PluginRegistry;
+import com.agentcrawler.crawler.cache.CatalogSnapshot;
+import com.agentcrawler.crawler.cache.CrawlCacheKeys;
+import com.agentcrawler.crawler.cache.CrawlerResultCache;
 import com.agentcrawler.crawler.reliability.CrawlSingleflight;
 import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
 import com.agentcrawler.crawler.reliability.UpstreamFailureClassifier;
@@ -37,6 +40,7 @@ public class ResourceCrawlerService {
     private final List<SiteFallback> fallbacks;
     private final SiteCircuitBoard circuitBoard;
     private final CrawlSingleflight singleflight;
+    private final CrawlerResultCache resultCache;
 
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
@@ -65,7 +69,6 @@ public class ResourceCrawlerService {
         );
     }
 
-    @Autowired
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
             RuleEngine ruleEngine,
@@ -75,6 +78,29 @@ public class ResourceCrawlerService {
             SiteCircuitBoard circuitBoard,
             CrawlSingleflight singleflight
     ) {
+        this(
+                pluginRegistry,
+                ruleEngine,
+                mediaExtractor,
+                properties,
+                fallbacks,
+                circuitBoard,
+                singleflight,
+                CrawlerResultCache.noop()
+        );
+    }
+
+    @Autowired
+    public ResourceCrawlerService(
+            PluginRegistry pluginRegistry,
+            RuleEngine ruleEngine,
+            MediaExtractor mediaExtractor,
+            AppProperties properties,
+            List<SiteFallback> fallbacks,
+            SiteCircuitBoard circuitBoard,
+            CrawlSingleflight singleflight,
+            CrawlerResultCache resultCache
+    ) {
         this.pluginRegistry = pluginRegistry;
         this.ruleEngine = ruleEngine;
         this.mediaExtractor = mediaExtractor;
@@ -82,10 +108,24 @@ public class ResourceCrawlerService {
         this.fallbacks = fallbacks == null ? List.of() : List.copyOf(fallbacks);
         this.circuitBoard = circuitBoard == null ? SiteCircuitBoard.disabled() : circuitBoard;
         this.singleflight = singleflight == null ? CrawlSingleflight.direct() : singleflight;
+        this.resultCache = resultCache == null ? CrawlerResultCache.noop() : resultCache;
     }
 
     public CrawlResourceResult crawl(String keyword, String site) {
-        return singleflight.run(CrawlSingleflight.key(site, keyword), () -> crawlUncoalesced(keyword, site));
+        String lookup = CrawlCacheKeys.lookup(site, keyword);
+        return singleflight.run(CrawlSingleflight.key(site, keyword), () -> {
+            CrawlResourceResult cached = resultCache.getPlay(lookup);
+            if (cached != null) {
+                log.debug("播放缓存命中 {}", lookup);
+                return cached;
+            }
+            CrawlResourceResult result = crawlUncoalesced(keyword, site);
+            if (hasVideos(result)) {
+                resultCache.putPlay(lookup, result);
+                resultCache.putCatalog(lookup, CatalogSnapshot.from(result));
+            }
+            return result;
+        });
     }
 
     CrawlResourceResult crawlUncoalesced(String keyword, String site) {

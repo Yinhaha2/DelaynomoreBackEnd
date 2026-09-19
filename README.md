@@ -37,6 +37,7 @@ src/main/java/com/agentcrawler/
 │   ├── webview/         # Playwright Chromium（useWebview 规则）
 │   ├── fallback/        # YHDM / SiliSili 专用降级解析（插件拿不到播放地址时）
 │   ├── reliability/     # 按上游熔断、单飞、后台嗅探
+│   ├── cache/           # 爬虫出口 Caffeine / Redis 缓存
 │   └── service/         # 定向爬取编排
 ├── service/             # 会话 / 对话业务
 └── store/               # 内存会话存储
@@ -108,6 +109,32 @@ agent:
 
 单元测试默认 `reliability.enabled: false`。
 
+### 爬虫出口缓存（P1）
+
+贴在 `ResourceCrawlerService.crawl` 出口，**不进 LLM**。LLM 仍只拿线路摘要；SSE `resource_bundle` 在播放缓存命中时直接下发。
+
+| 层 | Key | TTL | 内容 |
+|----|-----|-----|------|
+| play | `acrawl:play:{site}:{keyword}` | **2～15 分钟**（默认 10 分钟，硬顶 15 分钟） | 完整 `CrawlResourceResult`（含可播 URL） |
+| catalog | `acrawl:catalog:{site}:{keyword}` | **1～12 小时**（默认 8 小时） | 作品名 / 线路名 / 集标题 / 源页面，**无签名直链** |
+
+默认只用进程内 **Caffeine**。多实例时打开 Redis 作 L2；Redis 超时或挂掉只打日志，继续用 Caffeine 或直连爬虫。失败结果不缓存。点播 403 的 `play_refresh` 还没做。
+
+```yaml
+agent:
+  crawler:
+    cache:
+      enabled: true
+      play-ttl-seconds: 600
+      catalog-ttl-seconds: 28800
+      redis:
+        enabled: false          # 部署 Redis 后改为 true
+        host: 127.0.0.1
+        port: 6379
+```
+
+环境变量：`AGENT_REDIS_ENABLED`、`AGENT_REDIS_HOST`、`AGENT_REDIS_PORT`、`AGENT_REDIS_PASSWORD`。
+
 ### LangChain4j Agent 编排
 
 三大积木：
@@ -147,7 +174,11 @@ Agent 会将爬取结果转为 SSE 的 `resource_bundle`（按线路分组的选
 |------|------|--------|
 | `DEEPSEEK_API_KEY` | DeepSeek API Key（**必填**以启用 LLM Agent） | 空 |
 | `DEEPSEEK_BASE_URL` | DeepSeek OpenAI 兼容地址 | `https://api.deepseek.com/v1` |
-| `DEEPSEEK_MODEL` | 模型名称 | `deepseek-chat` |
+| `AGENT_REDIS_ENABLED` | 是否启用 Redis 作为缓存 L2 | `false` |
+| `AGENT_REDIS_HOST` | Redis 地址 | `127.0.0.1` |
+| `AGENT_REDIS_PORT` | Redis 端口 | `6379` |
+| `AGENT_REDIS_PASSWORD` | Redis 密码，可空 | 空 |
+| `AGENT_REDIS_DB` | Redis DB index | `0` |
 
 启动前配置（勿将 Key 提交到 Git）：
 
