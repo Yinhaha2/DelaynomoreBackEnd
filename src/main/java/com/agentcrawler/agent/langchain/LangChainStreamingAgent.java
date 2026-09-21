@@ -11,6 +11,7 @@ import com.agentcrawler.link.LinkInspectionResult;
 import com.agentcrawler.link.LinkInspectorService;
 import com.agentcrawler.link.LinkMessageEnricher;
 import com.agentcrawler.model.ChatAttachment;
+import com.agentcrawler.service.ConversationService;
 import com.agentcrawler.service.ConversationTitleGenerator;
 import com.agentcrawler.streaming.StreamEmitter;
 import com.agentcrawler.vision.ImageUploadService;
@@ -35,6 +36,7 @@ public class LangChainStreamingAgent implements AgentHandler {
     private final ObjectMapper objectMapper;
     private final ObjectProvider<AnimeAgent> animeAgentProvider;
     private final SessionBlackboardService blackboardService;
+    private final ConversationService conversationService;
     private final ImageUploadService imageUploadService;
     private final LinkInspectorService linkInspectorService;
 
@@ -43,6 +45,7 @@ public class LangChainStreamingAgent implements AgentHandler {
             ObjectMapper objectMapper,
             ObjectProvider<AnimeAgent> animeAgentProvider,
             SessionBlackboardService blackboardService,
+            ConversationService conversationService,
             ImageUploadService imageUploadService,
             LinkInspectorService linkInspectorService
     ) {
@@ -50,6 +53,7 @@ public class LangChainStreamingAgent implements AgentHandler {
         this.objectMapper = objectMapper;
         this.animeAgentProvider = animeAgentProvider;
         this.blackboardService = blackboardService;
+        this.conversationService = conversationService;
         this.imageUploadService = imageUploadService;
         this.linkInspectorService = linkInspectorService;
     }
@@ -234,6 +238,9 @@ public class LangChainStreamingAgent implements AgentHandler {
             }
             boolean hasAttachments = attachments != null && !attachments.isEmpty();
             title = ConversationTitleGenerator.generate(userMessage, hasAttachments, locked);
+        }
+        if (title != null && !title.isBlank()) {
+            conversationService.updateTitle(conversationId, title);
         }
         emitter.done(messageId, conversationId, title);
     }

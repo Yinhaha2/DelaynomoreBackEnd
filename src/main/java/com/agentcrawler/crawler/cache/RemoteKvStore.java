@@ -10,5 +10,22 @@ public interface RemoteKvStore {
 
     void set(String key, String value, Duration ttl);
 
+    default void delete(String key) {}
+
+    default void expire(String key, Duration ttl) {}
+
     default void close() {}
+
+    static RemoteKvStore noop() {
+        return new RemoteKvStore() {
+            @Override
+            public String get(String key) {
+                return null;
+            }
+
+            @Override
+            public void set(String key, String value, Duration ttl) {
+            }
+        };
+    }
 }

@@ -50,6 +50,7 @@ public class SessionBlackboardService {
         });
         EntityExtractor.extractCharacters(message).forEach(state::addCharacter);
         extractEpisodeProgress(message).ifPresent(state::setCurrentEpisode);
+        store.save(sessionId, state);
     }
 
     /** 爬虫/识图结果返回后同步黑板。 */
@@ -82,6 +83,7 @@ public class SessionBlackboardService {
                 });
             }
         }
+        store.save(sessionId, state);
     }
 
     public void lockContext(
@@ -112,6 +114,7 @@ public class SessionBlackboardService {
         if (visualFeatures != null && !visualFeatures.isBlank()) {
             state.setVisualFeatures(visualFeatures.trim());
         }
+        store.save(sessionId, state);
     }
 
     /** 组装强制上下文锚点块，注入到每轮用户消息头部。 */

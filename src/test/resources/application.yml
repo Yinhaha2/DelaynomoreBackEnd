@@ -26,6 +26,10 @@ agent:
         enabled: false
         base-url: http://127.0.0.1
         cookie: ""
+  session:
+    enabled: true
+    ttl-seconds: 604800
+    key-prefix: asess
   llm:
     api-key: ""
     memory-max-messages: 4

@@ -55,6 +55,10 @@ agent:
         enabled: true
         base-url: ${AGENT_SILISILI_BASE_URL:https://www.silisili.link}
         cookie: ${AGENT_SILISILI_COOKIE:silisili=on}
+  session:
+    enabled: true
+    ttl-seconds: 604800
+    key-prefix: asess
   llm:
     # main 启动时 EnvFileLoader 会从 .env 写入 DEEPSEEK_API_KEY / agent.llm.api-key
     api-key: ${DEEPSEEK_API_KEY:}
