@@ -1,8 +1,11 @@
 package com.agentcrawler.agent.session;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import java.util.ArrayList;
 import java.util.List;
 
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class AnimeSessionState {
     private String workTitle = "";
     private List<String> characters = new ArrayList<>();

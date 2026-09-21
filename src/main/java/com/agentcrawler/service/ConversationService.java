@@ -5,16 +5,16 @@ import com.agentcrawler.core.ErrorCode;
 import com.agentcrawler.core.IdGenerator;
 import com.agentcrawler.model.CreateConversationResponse;
 import com.agentcrawler.store.ConversationRecord;
-import com.agentcrawler.store.InMemoryConversationStore;
+import com.agentcrawler.store.ConversationStore;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 
 @Service
 public class ConversationService {
-    private final InMemoryConversationStore store;
+    private final ConversationStore store;
 
-    public ConversationService(InMemoryConversationStore store) {
+    public ConversationService(ConversationStore store) {
         this.store = store;
     }
 
@@ -33,5 +33,17 @@ public class ConversationService {
         if (record == null) {
             throw new AppException(ErrorCode.CONVERSATION_NOT_FOUND, "会话不存在: " + conversationId);
         }
+        store.touch(conversationId);
+    }
+
+    public void updateTitle(String conversationId, String title) {
+        if (conversationId == null || conversationId.isBlank() || title == null || title.isBlank()) {
+            return;
+        }
+        ConversationRecord record = store.find(conversationId);
+        if (record == null) {
+            return;
+        }
+        store.save(record.withTitle(title));
     }
 }

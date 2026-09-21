@@ -4,7 +4,6 @@ import com.agentcrawler.config.CrawlerCacheProperties;
 import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.springframework.beans.factory.DisposableBean;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -13,7 +12,7 @@ import java.time.Duration;
 /**
  * Caffeine L1 + optional Redis L2. Redis failures never fail the crawl.
  */
-public class TieredCrawlerResultCache implements CrawlerResultCache, DisposableBean {
+public class TieredCrawlerResultCache implements CrawlerResultCache {
     private static final Logger log = LoggerFactory.getLogger(TieredCrawlerResultCache.class);
 
     private final CrawlerResultCache local;
@@ -69,13 +68,6 @@ public class TieredCrawlerResultCache implements CrawlerResultCache, DisposableB
     public void putCatalog(String lookupKey, CatalogSnapshot snapshot) {
         local.putCatalog(lookupKey, snapshot);
         writeRemote(catalogKey(lookupKey), snapshot, Duration.ofSeconds(properties.catalogTtlSeconds()));
-    }
-
-    @Override
-    public void destroy() {
-        if (remote != null) {
-            remote.close();
-        }
     }
 
     private String playKey(String lookupKey) {

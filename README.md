@@ -133,7 +133,27 @@ agent:
         port: 6379
 ```
 
-环境变量：`AGENT_REDIS_ENABLED`、`AGENT_REDIS_HOST`、`AGENT_REDIS_PORT`、`AGENT_REDIS_PASSWORD`。
+环境变量：`AGENT_REDIS_ENABLED`、`AGENT_REDIS_HOST`、`AGENT_REDIS_PORT`、`AGENT_REDIS_PASSWORD`。同一组变量也给会话持久化用。
+
+### 会话持久化（meta / 黑板 / ChatMemory）
+
+和爬虫缓存共用 Redis 连接，**换前缀、换寿命**，避免把 7 天会话和 10 分钟播放 URL 写在一起。
+
+| Key | TTL | 内容 |
+|-----|-----|------|
+| `asess:meta:{conversationId}` | 滑动 **7 天**（可配 1 小时～30 天） | id / title / createdAt / updatedAt |
+| `asess:board:{conversationId}` | 同上 | 锁定作品、角色、集数（实体黑板） |
+| `asess:mem:{conversationId}` | 同上 | LangChain4j 最近 N 条 ChatMessage |
+
+默认 Redis 关闭时只在进程内。打开 `AGENT_REDIS_ENABLED` 后：重启或第二台 API 仍能接着聊；Redis 挂了降级本地，不堵请求。换题只清黑板，会话 id 和 ChatMemory 保留。爬虫全量 URL（`CrawlResultBuffer`）**不写 Redis**。
+
+```yaml
+agent:
+  session:
+    enabled: true
+    ttl-seconds: 604800
+    key-prefix: asess
+```
 
 ### LangChain4j Agent 编排
 
@@ -142,7 +162,7 @@ agent:
 | 组件 | 实现 |
 |------|------|
 | System Prompt | `AnimeAgent` 接口 `@SystemMessage` |
-| ChatMemory | `MessageWindowChatMemory`（每会话独立，默认 10 条） |
+| ChatMemory | `MessageWindowChatMemory` + `SessionChatMemoryStore`（默认 4 条，可进 Redis） |
 | Tool | `ResourceCrawlTools.searchResources(keyword, site)` |
 
 多轮对话：前端在 `POST /api/v1/chat/stream` 请求体中携带同一 `conversation_id`，LangChain4j 通过 `@MemoryId` 自动加载滑动窗口历史，支持「它的第二季有吗？」等指代消歧。
@@ -174,7 +194,7 @@ Agent 会将爬取结果转为 SSE 的 `resource_bundle`（按线路分组的选
 |------|------|--------|
 | `DEEPSEEK_API_KEY` | DeepSeek API Key（**必填**以启用 LLM Agent） | 空 |
 | `DEEPSEEK_BASE_URL` | DeepSeek OpenAI 兼容地址 | `https://api.deepseek.com/v1` |
-| `AGENT_REDIS_ENABLED` | 是否启用 Redis 作为缓存 L2 | `false` |
+| `AGENT_REDIS_ENABLED` | 是否启用 Redis（爬虫缓存 L2 + 会话持久化） | `false` |
 | `AGENT_REDIS_HOST` | Redis 地址 | `127.0.0.1` |
 | `AGENT_REDIS_PORT` | Redis 端口 | `6379` |
 | `AGENT_REDIS_PASSWORD` | Redis 密码，可空 | 空 |
@@ -207,6 +227,4 @@ Vite 代理 `/api` → `http://localhost:8000`。先打通纯文本 SSE，再测
 mvn test
 ```
 
-## 后续扩展
-
-- ChatMemory 持久化到 Redis / DB
+点播 403 的 `play_refresh` 仍未做。

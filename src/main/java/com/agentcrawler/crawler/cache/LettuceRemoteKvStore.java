@@ -65,6 +65,41 @@ public class LettuceRemoteKvStore implements RemoteKvStore {
         }
     }
 
+    @Override
+    public void delete(String key) {
+        if (coolingDown()) {
+            return;
+        }
+        try {
+            RedisCommands<String, String> commands = commands();
+            if (commands == null || key == null) {
+                return;
+            }
+            commands.del(key);
+        } catch (RuntimeException ex) {
+            log.warn("Redis DEL 失败: {}", ex.toString());
+            markFailure();
+        }
+    }
+
+    @Override
+    public void expire(String key, Duration ttl) {
+        if (coolingDown() || key == null) {
+            return;
+        }
+        try {
+            RedisCommands<String, String> commands = commands();
+            if (commands == null) {
+                return;
+            }
+            long seconds = Math.max(1, ttl.toSeconds());
+            commands.expire(key, seconds);
+        } catch (RuntimeException ex) {
+            log.warn("Redis EXPIRE 失败: {}", ex.toString());
+            markFailure();
+        }
+    }
+
     @PreDestroy
     @Override
     public void close() {

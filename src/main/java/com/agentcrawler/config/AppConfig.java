@@ -3,6 +3,7 @@ package com.agentcrawler.config;
 import com.agentcrawler.crawler.cache.CaffeineCrawlerResultCache;
 import com.agentcrawler.crawler.cache.CrawlerResultCache;
 import com.agentcrawler.crawler.cache.LettuceRemoteKvStore;
+import com.agentcrawler.crawler.cache.RemoteKvStore;
 import com.agentcrawler.crawler.cache.TieredCrawlerResultCache;
 import com.agentcrawler.crawler.reliability.CrawlSingleflight;
 import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
@@ -15,7 +16,12 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Configuration
 @EnableScheduling
-@EnableConfigurationProperties({AppProperties.class, CrawlerReliabilityProperties.class, CrawlerCacheProperties.class})
+@EnableConfigurationProperties({
+        AppProperties.class,
+        CrawlerReliabilityProperties.class,
+        CrawlerCacheProperties.class,
+        SessionProperties.class
+})
 public class AppConfig {
     @Bean
     SiteCircuitBoard siteCircuitBoard(CrawlerReliabilityProperties reliability) {
@@ -27,8 +33,16 @@ public class AppConfig {
         return new CrawlSingleflight();
     }
 
+    @Bean(destroyMethod = "close")
+    RemoteKvStore remoteKvStore(CrawlerCacheProperties cacheProperties) {
+        if (!cacheProperties.redis().enabled()) {
+            return RemoteKvStore.noop();
+        }
+        return new LettuceRemoteKvStore(cacheProperties.redis());
+    }
+
     @Bean
-    CrawlerResultCache crawlerResultCache(CrawlerCacheProperties cacheProperties) {
+    CrawlerResultCache crawlerResultCache(CrawlerCacheProperties cacheProperties, RemoteKvStore remoteKvStore) {
         if (!cacheProperties.enabled()) {
             return CrawlerResultCache.noop();
         }
@@ -38,11 +52,6 @@ public class AppConfig {
         }
         ObjectMapper mapper = new ObjectMapper();
         mapper.configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-        return new TieredCrawlerResultCache(
-                local,
-                new LettuceRemoteKvStore(cacheProperties.redis()),
-                cacheProperties,
-                mapper
-        );
+        return new TieredCrawlerResultCache(local, remoteKvStore, cacheProperties, mapper);
     }
 }
