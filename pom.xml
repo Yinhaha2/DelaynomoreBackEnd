@@ -15,7 +15,7 @@
     <artifactId>agent-crawler-api</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>agent-crawler-api</name>
-    <description>Agent Crawler backend with LangChain4j and Kazumi-style crawler</description>
+    <description>Agent video resource crawler backend with LangChain4j</description>
 
     <properties>
         <java.version>17</java.version>

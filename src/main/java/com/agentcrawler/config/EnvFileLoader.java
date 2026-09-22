@@ -66,12 +66,10 @@ public final class EnvFileLoader {
         List<Path> candidates = new ArrayList<>();
         Path cwd = Path.of("").toAbsolutePath().normalize();
         candidates.add(cwd.resolve(".env"));
-        candidates.add(cwd.resolve("bullshitbackend").resolve(".env"));
 
         Path walk = cwd;
         for (int i = 0; i < 4 && walk != null; i++) {
             candidates.add(walk.resolve(".env"));
-            candidates.add(walk.resolve("bullshitbackend").resolve(".env"));
             walk = walk.getParent();
         }
 
