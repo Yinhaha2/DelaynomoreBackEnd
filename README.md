@@ -10,59 +10,38 @@
 
 ```mermaid
 flowchart TB
-  Client["客户端"]
-  API["ChatController<br/>POST /api/v1/chat/stream"]
-  Chat["ChatService"]
-  Agent["LangChainStreamingAgent"]
-
-  subgraph pre["请求前置"]
-    BB["会话黑板<br/>作品 / 角色 / 集数"]
-    Link["确定性链接管线<br/>extract → classify → SSRF → sniff"]
-    Mem["ChatMemory 滑动窗口"]
+  subgraph L1["① 接入"]
+    direction LR
+    U["客户端"] --> API["POST /api/v1/chat/stream"] --> AG["LangChainStreamingAgent"]
   end
 
-  subgraph orch["Agent 编排"]
-    DS["DeepSeek LLM"]
-    Tools["searchResources / inspectLink / 识图"]
+  subgraph L2["② 请求前置"]
+    direction LR
+    BB["会话黑板"] --> LK["确定性链接管线"] --> MEM["ChatMemory"]
   end
 
-  subgraph crawl["定向爬取"]
-    SF["Singleflight<br/>site + keyword"]
-    Cache["Caffeine L1 + Redis L2<br/>acrawl:play 短 TTL"]
-    Circuit["SiteCircuitBoard<br/>按上游熔断"]
-    Plugins["Kazumi RuleEngine<br/>插件 JSON / XPath"]
-    PW["Playwright WebView<br/>拦截 m3u8 / mp4"]
-    FB["YHDM / SiliSili 降级"]
+  subgraph L3["③ Agent 编排"]
+    direction LR
+    DS["DeepSeek"] --> SR["searchResources"]
+    DS --> IL["inspectLink"]
+    DS --> VS["识图"]
   end
 
-  subgraph out["双通道出口"]
-    Buf["CrawlResultBuffer<br/>全量结果含播放 URL"]
-    Summary["CrawlToolSummary<br/>仅线路名与集数"]
-    SSE["SSE<br/>text / resource_bundle / video / link / image / done / error"]
+  subgraph L4["④ 定向爬取"]
+    direction LR
+    SF["Singleflight"] --> CA["play 缓存"] --> CI["按源熔断"] --> EN["插件 / Playwright / 降级"]
   end
 
-  Redis["Redis 可选<br/>asess:* 会话  ·  acrawl:* 爬虫"]
+  subgraph L5["⑤ 双通道出口"]
+    direction LR
+    BUF["Buffer 含播放 URL"] --> CARD["SSE resource_bundle"]
+    SUM["Summary 仅线路与集数"] --> TXT["SSE text 推荐语"]
+  end
 
-  Client --> API --> Chat --> Agent
-  Agent --> BB
-  Agent --> Link
-  Agent --> Mem
-  Agent --> DS
-  DS --> Tools
-  Tools --> SF --> Cache
-  Cache --> Circuit
-  Circuit --> Plugins
-  Circuit --> FB
-  Plugins --> PW
-  Tools --> Buf
-  Tools --> Summary
-  Buf --> SSE
-  Summary --> DS
-  DS --> SSE
-  SSE --> Client
-  BB -.-> Redis
-  Mem -.-> Redis
-  Cache -.-> Redis
+  AG --> L2
+  AG --> L3
+  SR --> L4
+  EN --> L5
 ```
 
 两条 URL 路径互不混用：
@@ -84,35 +63,23 @@ flowchart TB
 
 ```mermaid
 flowchart TD
-  Msg["用户消息 + 可选图片附件"]
-  BB["SessionBlackboardService.onUserMessage<br/>换题则清空，否则抽作品 / 角色 / 集数"]
-  Ext["LinkExtractor<br/>正则切出 HTTP(S) 与 magnet"]
-
-  Msg --> BB
-  Msg --> Ext
-
-  Ext --> Kind{"UrlClassifier"}
-  Kind -->|magnet| Mag["MagnetLinkParser<br/>InfoHash / 展示名"]
-  Kind -->|m3u8 mp4| Stream["直链 STREAM<br/>不发起页面抓取"]
-  Kind -->|http| Safe{"LinkSafety<br/>拦截 localhost / 内网 / 非 http"}
-
-  Safe -->|BLOCKED| Block["标记拒绝探测 SSRF"]
-  Safe -->|放行| Http["LinkHttpClient 跟随跳转"]
-  Http --> Reclass["按 finalUrl 再分类"]
-  Reclass --> OG["OpenGraph + VideoSiteParser<br/>B 站 / YouTube / 短链还原"]
-
-  Mag --> Lock
+  Msg["用户消息 + 可选附件"] --> BB["黑板 onUserMessage"]
+  Msg --> Ext["LinkExtractor 切 URL"]
+  Ext --> Kind["UrlClassifier"]
+  Kind -->|magnet| Mag["解析 InfoHash"]
+  Kind -->|m3u8/mp4| Stream["直链 不抓页面"]
+  Kind -->|http| Safe["LinkSafety SSRF"]
+  Safe -->|拦截| Block["BLOCKED"]
+  Safe -->|放行| Http["跟随跳转"] --> OG["OpenGraph / 视频站 / 短链"]
+  Mag --> Lock["达标则 lockContext"]
   Stream --> Lock
   OG --> Lock
-  Block --> Enrich
-  Lock["置信度达标则 blackboard.lockContext"]
-  Lock --> Enrich["LinkMessageEnricher<br/>结构化事实前置进 Prompt"]
-  Enrich --> Agent["AnimeAgent.chat<br/>LangChain4j Tool Calling"]
-
-  Agent --> T1["searchResources<br/>关键词必须是当前作品名"]
-  Agent --> T2["inspectLink<br/>仅补充解析未覆盖 URL"]
-  Agent --> T3["识图 Tool<br/>DeepSeek Vision → 锁作品"]
-  Agent --> Mem["SessionChatMemoryStore<br/>asess:mem 滑动窗口，不含播放 URL"]
+  Block --> Enrich["事实卡片注入 Prompt"]
+  Lock --> Enrich
+  Enrich --> Agent["AnimeAgent Tool Calling"]
+  Agent --> T1["searchResources"]
+  Agent --> T2["inspectLink"]
+  Agent --> T3["识图并锁作品"]
 ```
 
 数据在这一层的处理要点：
@@ -127,45 +94,36 @@ flowchart TD
 
 爬取结果清洗为 `resource_bundle`（标题、线路、集数、可播链接），LLM 只吃摘要，播放 URL 不灌进上下文。同 `site + keyword` 的并发请求在缓存查找外层做单飞合并；播放结果写入短 TTL 缓存（默认 10 分钟，硬顶 15 分钟，适配带 `X-Amz-Expires` 的签名直链），目录快照另存长 TTL（默认 8 小时）。
 
+检索怎么选源、怎么降级：
+
 ```mermaid
-flowchart TD
-  Tool["searchResources(keyword, site)"]
-  SF["CrawlSingleflight<br/>合并同 site+keyword 的在途请求"]
-  PlayHit{"Caffeine / Redis<br/>acrawl:play 命中?"}
+flowchart LR
+  SR["searchResources"] --> SF["Singleflight"]
+  SF --> HIT["play 缓存"]
+  HIT -->|命中| RES["CrawlResourceResult"]
+  HIT -->|未命中| GATE["熔断门禁"]
+  GATE -->|OPEN| NEXT["换源"]
+  GATE -->|CLOSED| TRY["插件 / adapter"]
+  NEXT --> TRY
+  TRY -->|有视频| SAVE["写短/长 TTL 缓存"]
+  TRY -->|无视频| FB["YHDM / SiliSili"]
+  FB --> SAVE
+  SAVE --> RES
+```
 
-  Tool --> SF --> PlayHit
-  PlayHit -->|是| Split
-  PlayHit -->|否| Unc["crawlUncoalesced"]
+一页怎么抽出播放地址，以及结果怎么拆成两条出口：
 
-  Unc --> Ded{"站点是否匹配专用 adapter?"}
-  Ded -->|是且未熔断| F1["YHDM / SiliSili 先爬"]
-  F1 -->|拿到 videos| Split
-  F1 -->|没有播放地址| Plug
-  Ded -->|否| Plug["crawlPlugins"]
-
-  Plug --> Rules["PluginRegistry 解析插件 JSON"]
-  Rules --> Search["RuleEngine.search<br/>searchURL 模板 + XPath 列表"]
-  Search --> Chap["queryChapters<br/>线路 / 集数 URL"]
-  Chap --> Page["fetchPageDetailed"]
-
-  Page --> WV{"useWebview?"}
-  WV -->|是| PW["Playwright 最多 2 路<br/>拦截请求中的 m3u8/mp4"]
-  PW -->|槽位耗尽或失败| OK["回退 OkHttp + Jsoup"]
-  WV -->|否| OK
-  OK --> Media["MediaExtractor<br/>HTML 中的直链 / 图片"]
-
-  Plug -->|仍无 videos| F2["遍历其它 Fallback adapter"]
-  F2 --> Split
-  Media --> Split
-  PW --> Split
-
-  Split["产出 CrawlResourceResult"]
-  Split --> Full["CrawlResultBuffer.push<br/>含真实播放 URL"]
-  Split --> Sum["CrawlToolSummary JSON<br/>ok / 线路名 / 集数 / 无 URL"]
-  Split --> CachePut["putPlay 2–15 min<br/>putCatalog 1–12 h"]
-
-  Full --> SSE["onToolExecuted<br/>CrawlResultEmitter → resource_bundle"]
-  Sum --> LLM["交回 DeepSeek<br/>只写 2～3 句推荐，禁止复述链接"]
+```mermaid
+flowchart LR
+  PAGE["fetchPageDetailed"] --> WV["useWebview"]
+  WV -->|是| PW["Playwright 最多 2 路"]
+  WV -->|否| HTTP["OkHttp + Jsoup"]
+  PW -->|槽满或失败| HTTP
+  PW --> MEDIA["抽出 m3u8/mp4"]
+  HTTP --> MEDIA
+  MEDIA --> RES["CrawlResourceResult"]
+  RES --> BUF["Buffer → resource_bundle"]
+  RES --> SUM["Summary → 推荐语"]
 ```
 
 缓存与会话键前缀隔离：爬虫 `acrawl:play` / `acrawl:catalog`，会话 `asess:meta` / `asess:board` / `asess:mem`。Redis 不可用时读写失败留在本地，不让一次缓存故障打垮检索。
@@ -178,36 +136,23 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-  subgraph req["用户请求路径"]
-    In["streamChat"]
-    Gate{"SiteCircuitBoard.allowRequest"}
-    In --> Gate
-    Gate -->|CLOSED| Crawl["插件 / Fallback 抓取"]
-    Gate -->|OPEN| Skip["跳过该上游<br/>用户流量永不探 Half-Open"]
-    Crawl --> Class{"UpstreamFailureClassifier"}
-    Class -->|超时 / 5xx| Fail["recordFailure"]
-    Class -->|空目录或业务空结果| Ok["recordSuccess<br/>空结果不熔断"]
-    Fail --> Out
-    Ok --> Out
-    Skip --> Next["尝试下一插件或降级源"]
-    Next --> Out["CrawlResultEmitter"]
-  end
+  In["streamChat"] --> Gate["熔断 allowRequest"]
+  Gate -->|CLOSED| Crawl["插件 / Fallback"]
+  Gate -->|OPEN| Skip["跳过 不探 Half-Open"]
+  Crawl --> Cls["失败分类"]
+  Cls -->|超时/5xx| Fail["熔断该源"]
+  Cls -->|空目录| OK["不熔断"]
+  Skip --> Next["下一上游"]
+  Fail --> EMIT["SSE 推流"]
+  OK --> EMIT
+  Next --> EMIT
+```
 
-  subgraph sse["SSE 帧"]
-    Out --> RB["resource_bundle 选集卡片"]
-    Out --> V["video / link / image"]
-    LLM2["Agent 最终推荐语"] --> T["text 分片"]
-    T --> Done["done 含 conversation_id / 可选 title"]
-    RB --> Done
-    V --> Done
-  end
-
-  subgraph bg["后台恢复 不占用用户请求"]
-    Sch["UpstreamProbeScheduler"]
-    Sch --> Canary["对 OPEN 源发一次 canary GET"]
-    Canary -->|成功| Close["recordProbeSuccess → CLOSED"]
-    Canary -->|失败| Stay["保持 OPEN"]
-  end
+```mermaid
+flowchart LR
+  Sch["ProbeScheduler"] --> Canary["canary GET"]
+  Canary -->|成功| CL["恢复 CLOSED"]
+  Canary -->|失败| OP["保持 OPEN"]
 ```
 
 一次成功搜番在时间线上的数据流：
