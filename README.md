@@ -134,6 +134,8 @@ flowchart LR
 
 按上游做熔断（1 分钟内多次超时或 5xx 则跳过该源）、同 `site + keyword` 单飞合并爬取、Playwright 全局最多 2 路并发，挤不进去回退 OkHttp；后台定时对熔断源做 canary 嗅探，探测不走用户请求路径。无 `DEEPSEEK_API_KEY` 时降级为启发式检索，保证链路可联调。
 
+用户请求路径：
+
 ```mermaid
 flowchart LR
   In["streamChat"] --> Gate["熔断 allowRequest"]
@@ -147,6 +149,8 @@ flowchart LR
   OK --> EMIT
   Next --> EMIT
 ```
+
+后台恢复不走用户请求：
 
 ```mermaid
 flowchart LR
