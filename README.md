@@ -205,6 +205,13 @@ mvn exec:java -Dexec.args="install chromium"
 |------|------|------|
 | `POST` | `/api/v1/conversations` | 创建会话 |
 | `POST` | `/api/v1/chat/stream` | 发送消息，SSE 流式返回 |
+| `POST` | `/api/v1/chat/stop` | 停止这一轮生成 |
+
+停止生成的请求体是 `{ "conversation_id": "<会话号>" }`，响应是 `{ "stopped": true }` 或 `{ "stopped": false }`。`false` 表示会话号为空，或这一轮已经结束。停止会取消正在进行的站点 HTTP 请求，SSE 随后给出 `error`，`code` 为 `GENERATION_STOPPED`，文案是「已停止生成」。
+
+### 空转限制
+
+检索过程中如果同一条进度超过 8 秒没有新内容，思考流会补一句「仍在进行：{当前进度}」。这样连续空转 **5 次**（大约 40 秒没有新进度）后，这一轮会自己停下来，不再一直转到 120 秒总超时。SSE 的 `error.code` 为 `SITE_RETRY_LIMIT`，文案是「当前站点已重试 5 次，仍没有播放地址，已停止。」中间只要出现新的思考进度，空转计数就清零。
 
 未配置 API Key 时仍可联调启发式检索（识别《番剧名》）。单元测试默认关闭 WebView / 熔断嗅探 / Redis。
 
@@ -235,7 +242,7 @@ src/main/java/com/agentcrawler/
 │   ├── reliability/     # 熔断、单飞、后台嗅探
 │   └── cache/           # 爬虫出口缓存（播放短 TTL / 目录长 TTL）
 ├── link/                # URL / magnet 确定性解析
-├── streaming/           # SSE 编码
+├── streaming/           # SSE 编码、思考进度与生成停止
 └── store/               # 会话 meta / ChatMemory（可选 Redis）
 ```
 
@@ -249,3 +256,7 @@ src/main/java/com/agentcrawler/
 | `DEEPSEEK_BASE_URL` | OpenAI 兼容地址 | `https://api.deepseek.com/v1` |
 | `AGENT_PUBLIC_BASE_URL` | 上传图片对外 URL | `http://localhost:8000` |
 | `AGENT_REDIS_ENABLED` | Redis（爬虫缓存 L2 + 会话持久化） | `false` |
+| `COS_SECRET_ID` / `COS_SECRET_KEY` | 私有桶密钥。配齐后，成功检索会再写入对象存储，不按时间过期 | 空 |
+| `COS_BUCKET` | 存储桶名 | 空 |
+| `COS_REGION` | 桶地域 | `ap-guangzhou` |
+| `COS_CACHE_MAX_BYTES` | 对象缓存上限，达到后按最久未使用删除 | `10737418240` |

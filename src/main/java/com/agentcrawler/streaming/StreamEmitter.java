@@ -5,11 +5,14 @@ import com.agentcrawler.core.ErrorCode;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 
 public class StreamEmitter {
     private final int maxChunkChars;
     private final Consumer<String> frameConsumer;
+    private final Object writeLock = new Object();
+    private final AtomicBoolean closed = new AtomicBoolean();
     private final List<String> textParts = new ArrayList<>();
 
     public StreamEmitter(int maxChunkChars, Consumer<String> frameConsumer) {
@@ -23,24 +26,33 @@ public class StreamEmitter {
         }
         textParts.add(content);
         for (String piece : splitUtf8Safe(content, maxChunkChars)) {
-            frameConsumer.accept(SseEncoder.textDelta(piece));
+            emit(SseEncoder.textDelta(piece));
+        }
+    }
+
+    public void thinking(String content) {
+        if (content == null || content.isBlank()) {
+            return;
+        }
+        for (String piece : splitUtf8Safe(content.strip() + "\n", maxChunkChars)) {
+            emit(SseEncoder.thinkingDelta(piece));
         }
     }
 
     public void link(String url, String title, String description) {
-        frameConsumer.accept(SseEncoder.link(url, title, description));
+        emit(SseEncoder.link(url, title, description));
     }
 
     public void image(String url, String alt) {
-        frameConsumer.accept(SseEncoder.image(url, alt));
+        emit(SseEncoder.image(url, alt));
     }
 
     public void video(String url, String title, String format, String sourcePage, String roadName) {
-        frameConsumer.accept(SseEncoder.video(url, title, format, sourcePage, roadName));
+        emit(SseEncoder.video(url, title, format, sourcePage, roadName));
     }
 
     public void resourceBundle(Map<String, Object> payload) {
-        frameConsumer.accept(SseEncoder.resourceBundle(payload));
+        emit(SseEncoder.resourceBundle(payload));
     }
 
     public void done(String messageId, String conversationId) {
@@ -48,15 +60,31 @@ public class StreamEmitter {
     }
 
     public void done(String messageId, String conversationId, String title) {
-        frameConsumer.accept(SseEncoder.done(messageId, conversationId, title));
+        emit(SseEncoder.done(messageId, conversationId, title));
     }
 
     public void error(ErrorCode code, String message) {
-        frameConsumer.accept(SseEncoder.error(code.name(), message));
+        emit(SseEncoder.error(code.name(), message));
     }
 
     public String collectedText() {
         return String.join("", textParts);
+    }
+
+    public void close() {
+        closed.set(true);
+    }
+
+    private void emit(String frame) {
+        if (closed.get()) {
+            return;
+        }
+        synchronized (writeLock) {
+            if (closed.get()) {
+                return;
+            }
+            frameConsumer.accept(frame);
+        }
     }
 
     static List<String> splitUtf8Safe(String text, int maxChars) {

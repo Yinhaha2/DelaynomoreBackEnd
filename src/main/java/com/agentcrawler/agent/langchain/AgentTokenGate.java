@@ -12,8 +12,10 @@ public final class AgentTokenGate {
         }
     }
 
-    public synchronized void discardIntermediate() {
+    public synchronized String discardIntermediate() {
+        String text = pending.toString();
         pending.setLength(0);
+        return text;
     }
 
     public synchronized String takeFinalText() {

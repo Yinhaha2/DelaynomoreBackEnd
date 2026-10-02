@@ -1,7 +1,9 @@
 package com.agentcrawler.api;
 
 import com.agentcrawler.model.ChatStreamRequest;
+import com.agentcrawler.model.StopGenerationRequest;
 import com.agentcrawler.service.ChatService;
+import com.agentcrawler.streaming.GenerationRuns;
 import jakarta.validation.Valid;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +16,7 @@ import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBo
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/chat")
@@ -51,5 +54,15 @@ public class ChatController {
                 .header("Connection", "keep-alive")
                 .header("X-Accel-Buffering", "no")
                 .body(body);
+    }
+
+    @PostMapping("/stop")
+    public Map<String, Boolean> stop(@RequestBody StopGenerationRequest request) {
+        String conversationId = request.conversationId();
+        if (conversationId == null || conversationId.isBlank()) {
+            return Map.of("stopped", false);
+        }
+        boolean stopped = GenerationRuns.stop(conversationId.trim(), GenerationRuns.StopReason.USER);
+        return Map.of("stopped", stopped);
     }
 }

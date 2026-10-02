@@ -13,7 +13,9 @@ import com.agentcrawler.link.LinkMessageEnricher;
 import com.agentcrawler.model.ChatAttachment;
 import com.agentcrawler.service.ConversationService;
 import com.agentcrawler.service.ConversationTitleGenerator;
+import com.agentcrawler.streaming.GenerationRuns;
 import com.agentcrawler.streaming.StreamEmitter;
+import com.agentcrawler.streaming.ThinkingReporter;
 import com.agentcrawler.vision.ImageUploadService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.ObjectProvider;
@@ -90,26 +92,49 @@ public class LangChainStreamingAgent implements AgentHandler {
         AgentTokenGate tokenGate = new AgentTokenGate();
 
         blackboardService.onUserMessage(conversationId, userMessage);
-        List<LinkInspectionResult> inspections = linkInspectorService.inspectMessage(conversationId, userMessage);
-        String enrichedMessage = AttachmentMessageEnricher.enrich(userMessage, attachments, imageUploadService);
-        enrichedMessage = LinkMessageEnricher.enrich(enrichedMessage, inspections);
-        String anchoredMessage = prependAnchor(conversationId, enrichedMessage);
-
         SessionContextHolder.set(conversationId);
+        ThinkingReporter.bind(conversationId, emitter::thinking);
         try {
+            ThinkingReporter.note("正在阅读你的消息。");
+            List<LinkInspectionResult> inspections = linkInspectorService.inspectMessage(conversationId, userMessage);
+            if (attachments != null && !attachments.isEmpty()) {
+                ThinkingReporter.note("正在准备识别图片。");
+            }
+            if (!inspections.isEmpty()) {
+                ThinkingReporter.note("已解析消息里的 " + inspections.size() + " 条链接。");
+            }
+            String enrichedMessage = AttachmentMessageEnricher.enrich(userMessage, attachments, imageUploadService);
+            enrichedMessage = LinkMessageEnricher.enrich(enrichedMessage, inspections);
+            String anchoredMessage = prependAnchor(conversationId, enrichedMessage);
+            ThinkingReporter.note("正在规划检索。");
             animeAgent.chat(conversationId, anchoredMessage)
-                    .onNext(tokenGate::append)
+                    .onNext(token -> {
+                        if (GenerationRuns.isStopped(conversationId)) {
+                            return;
+                        }
+                        tokenGate.append(token);
+                        ThinkingReporter.touch(conversationId);
+                    })
                     .onToolExecuted(toolExecution -> {
-                        tokenGate.discardIntermediate();
+                        if (GenerationRuns.isStopped(conversationId)) {
+                            return;
+                        }
+                        String aside = tokenGate.discardIntermediate();
+                        if (aside != null && !aside.isBlank()) {
+                            ThinkingReporter.note(aside.strip());
+                        }
                         String toolName = toolExecution.request().name();
                         if (CRAWL_TOOL_NAMES.contains(toolName)) {
+                            ThinkingReporter.note("检索结果已经整理好，正在写回复。");
                             emitBufferedCrawlResult(conversationId, toolExecution.result(), emitter);
                         }
                     })
                     .onComplete(response -> {
-                        String finalText = tokenGate.takeFinalText();
-                        if (!finalText.isBlank()) {
-                            emitter.text(finalText);
+                        if (!GenerationRuns.isStopped(conversationId)) {
+                            String finalText = tokenGate.takeFinalText();
+                            if (!finalText.isBlank()) {
+                                emitter.text(finalText);
+                            }
                         }
                         latch.countDown();
                     })
@@ -121,6 +146,7 @@ public class LangChainStreamingAgent implements AgentHandler {
                     .start();
             awaitAndFinish(latch, errorRef, failed, messageId, conversationId, userMessage, attachments, needTitle, emitter);
         } finally {
+            ThinkingReporter.clear(conversationId);
             SessionContextHolder.clear();
             CrawlResultBuffer.clear(conversationId);
         }
@@ -204,21 +230,63 @@ public class LangChainStreamingAgent implements AgentHandler {
             StreamEmitter emitter
     ) {
         try {
-            if (!latch.await(120, TimeUnit.SECONDS)) {
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(120);
+            boolean finished = false;
+            while (System.nanoTime() < deadline) {
+                if (GenerationRuns.isStopped(conversationId)) {
+                    break;
+                }
+                long remainingNanos = deadline - System.nanoTime();
+                long slice = Math.min(remainingNanos, TimeUnit.MILLISECONDS.toNanos(400));
+                if (latch.await(slice, TimeUnit.NANOSECONDS)) {
+                    finished = true;
+                    break;
+                }
+                int repeats = ThinkingReporter.nudgeIdle(conversationId, 8_000);
+                if (repeats >= ThinkingReporter.MAX_IDLE_REPEATS) {
+                    GenerationRuns.stop(conversationId, GenerationRuns.StopReason.SITE_RETRY_LIMIT);
+                    break;
+                }
+            }
+            if (finishIfStopped(conversationId, emitter)) {
+                return;
+            }
+            if (!finished) {
                 emitter.error(ErrorCode.AGENT_TIMEOUT, "Agent 处理超时，请稍后重试");
                 return;
             }
         } catch (InterruptedException ex) {
             Thread.currentThread().interrupt();
+            if (finishIfStopped(conversationId, emitter)) {
+                return;
+            }
             emitter.error(ErrorCode.AGENT_ERROR, "Agent 处理被中断");
             return;
         }
 
+        if (finishIfStopped(conversationId, emitter)) {
+            return;
+        }
         if (failed.get() && errorRef.get() != null) {
             emitter.error(ErrorCode.AGENT_ERROR, "Agent 内部错误: " + errorRef.get().getMessage());
             return;
         }
         finishDone(conversationId, userMessage, attachments, needTitle, messageId, emitter);
+    }
+
+    private boolean finishIfStopped(String conversationId, StreamEmitter emitter) {
+        GenerationRuns.GenerationRun run = GenerationRuns.get(conversationId);
+        if (run == null || !run.stopped()) {
+            return false;
+        }
+        if (run.reason() == GenerationRuns.StopReason.SITE_RETRY_LIMIT) {
+            ThinkingReporter.note("当前站点已重试 5 次，停止检索。");
+            emitter.error(ErrorCode.SITE_RETRY_LIMIT, "当前站点已重试 5 次，仍没有播放地址，已停止。");
+        } else {
+            emitter.error(ErrorCode.GENERATION_STOPPED, "已停止生成");
+        }
+        emitter.close();
+        return true;
     }
 
     private void finishDone(
@@ -263,6 +331,13 @@ public class LangChainStreamingAgent implements AgentHandler {
             }
             CrawlResultEmitter.emit(result, emitter);
             return true;
+        } catch (com.agentcrawler.streaming.GenerationStoppedException ex) {
+            if (ex.reason() == GenerationRuns.StopReason.SITE_RETRY_LIMIT) {
+                emitter.error(ErrorCode.SITE_RETRY_LIMIT, "当前站点已重试 5 次，仍没有播放地址，已停止。");
+            } else {
+                emitter.error(ErrorCode.GENERATION_STOPPED, "已停止生成");
+            }
+            return false;
         } catch (AppException ex) {
             emitter.error(ex.getCode(), ex.getMessage());
             return false;

@@ -3,6 +3,9 @@ package com.agentcrawler.agent.langchain;
 import com.agentcrawler.agent.session.SessionContextHolder;
 import com.agentcrawler.crawler.model.CrawlResourceResult;
 import com.agentcrawler.crawler.service.ResourceCrawlerService;
+import com.agentcrawler.streaming.GenerationRuns;
+import com.agentcrawler.streaming.GenerationStoppedException;
+import com.agentcrawler.streaming.ThinkingReporter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
@@ -33,11 +36,17 @@ public class ResourceCrawlTools {
             @P("搜索关键词，例如：咒术回战 第二季") String keyword,
             @P("目标站点插件名或 baseURL，默认 DM84") String site
     ) {
+        ThinkingReporter.ensureSession();
+        GenerationRuns.checkpoint();
         String resolvedKeyword = keyword == null ? "" : keyword.trim();
         String resolvedSite = site == null || site.isBlank() ? "DM84" : site.trim();
+        ThinkingReporter.note("开始在「" + resolvedSite + "」检索「" + resolvedKeyword + "」。");
         CrawlResourceResult result;
         try {
             result = crawlerService.crawl(resolvedKeyword, resolvedSite);
+            GenerationRuns.checkpoint();
+        } catch (GenerationStoppedException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("searchResources 失败: {}", ex.toString());
             result = CrawlResourceResult.failed(

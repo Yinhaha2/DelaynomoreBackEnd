@@ -1,7 +1,10 @@
 package com.agentcrawler.crawler.http;
 
 import com.agentcrawler.crawler.model.PreparedRuleRequest;
+import com.agentcrawler.streaming.GenerationRuns;
+import com.agentcrawler.streaming.GenerationStoppedException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import okhttp3.Call;
 import okhttp3.FormBody;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
@@ -108,11 +111,31 @@ public class SiteHttpClient {
     }
 
     private String execute(Request request) throws IOException {
-        try (Response response = client.newCall(request).execute()) {
+        GenerationRuns.GenerationRun run = GenerationRuns.current();
+        if (run != null && run.stopped()) {
+            throw new GenerationStoppedException(run.reason());
+        }
+        Call call = client.newCall(request);
+        if (run != null) {
+            run.attach(call);
+        }
+        try (Response response = call.execute()) {
+            if (run != null && run.stopped()) {
+                throw new GenerationStoppedException(run.reason());
+            }
             if (!response.isSuccessful() || response.body() == null) {
                 throw new IOException("HTTP " + response.code() + " for " + request.url());
             }
             return response.body().string();
+        } catch (IOException ex) {
+            if (run != null && run.stopped()) {
+                throw new GenerationStoppedException(run.reason());
+            }
+            throw ex;
+        } finally {
+            if (run != null) {
+                run.detach(call);
+            }
         }
     }
 

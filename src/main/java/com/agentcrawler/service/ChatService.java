@@ -7,6 +7,8 @@ import com.agentcrawler.core.ErrorCode;
 import com.agentcrawler.core.IdGenerator;
 import com.agentcrawler.model.ChatAttachment;
 import com.agentcrawler.model.ChatStreamRequest;
+import com.agentcrawler.streaming.GenerationRuns;
+import com.agentcrawler.streaming.SseEncoder;
 import com.agentcrawler.streaming.StreamEmitter;
 
 import java.util.List;
@@ -61,9 +63,19 @@ public class ChatService {
         }
 
         String messageId = IdGenerator.messageId();
-        StreamEmitter streamEmitter = new StreamEmitter(properties.textChunkMaxChars(), frameConsumer);
+        GenerationRuns.GenerationRun run = GenerationRuns.begin(conversationId);
+        Consumer<String> writing = frame -> {
+            try {
+                frameConsumer.accept(frame);
+            } catch (RuntimeException ex) {
+                run.requestStop(GenerationRuns.StopReason.USER);
+                throw ex;
+            }
+        };
+        StreamEmitter streamEmitter = new StreamEmitter(properties.textChunkMaxChars(), writing);
 
         try {
+            writing.accept(SseEncoder.session(conversationId, messageId));
             agentHandler.streamReply(
                     conversationId,
                     message,
@@ -73,12 +85,19 @@ public class ChatService {
                     streamEmitter
             );
         } catch (AppException ex) {
-            frameConsumer.accept(com.agentcrawler.streaming.SseEncoder.error(ex.getCode().name(), ex.getMessage()));
+            if (!run.stopped()) {
+                writing.accept(SseEncoder.error(ex.getCode().name(), ex.getMessage()));
+            }
         } catch (Exception ex) {
-            frameConsumer.accept(com.agentcrawler.streaming.SseEncoder.error(
-                    ErrorCode.AGENT_ERROR.name(),
-                    "Agent 内部错误，请稍后重试"
-            ));
+            if (!run.stopped()) {
+                writing.accept(SseEncoder.error(
+                        ErrorCode.AGENT_ERROR.name(),
+                        "Agent 内部错误，请稍后重试"
+                ));
+            }
+        } finally {
+            streamEmitter.close();
+            GenerationRuns.end(conversationId, run);
         }
     }
 }

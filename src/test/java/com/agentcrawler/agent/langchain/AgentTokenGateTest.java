@@ -11,7 +11,7 @@ class AgentTokenGateTest {
         AgentTokenGate gate = new AgentTokenGate();
         gate.append("好的，我来帮你检索。");
         gate.append("首先让我确认上下文。");
-        gate.discardIntermediate();
+        assertEquals("好的，我来帮你检索。首先让我确认上下文。", gate.discardIntermediate());
         gate.append("检索站点暂时无法访问，请稍后再试。");
 
         assertEquals("检索站点暂时无法访问，请稍后再试。", gate.takeFinalText());

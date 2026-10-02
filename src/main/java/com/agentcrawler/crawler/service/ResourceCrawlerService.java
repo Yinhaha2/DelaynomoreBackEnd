@@ -1,5 +1,6 @@
 package com.agentcrawler.crawler.service;
 
+import com.agentcrawler.cache.CrawlResultCache;
 import com.agentcrawler.config.AppProperties;
 import com.agentcrawler.core.AppException;
 import com.agentcrawler.crawler.engine.RuleEngine;
@@ -18,8 +19,12 @@ import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
 import com.agentcrawler.crawler.reliability.UpstreamFailureClassifier;
 import com.agentcrawler.crawler.reliability.UpstreamKeys;
 import com.agentcrawler.crawler.webview.FetchedPage;
+import com.agentcrawler.streaming.GenerationRuns;
+import com.agentcrawler.streaming.GenerationStoppedException;
+import com.agentcrawler.streaming.ThinkingReporter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +32,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -41,6 +47,7 @@ public class ResourceCrawlerService {
     private final SiteCircuitBoard circuitBoard;
     private final CrawlSingleflight singleflight;
     private final CrawlerResultCache resultCache;
+    private final CrawlResultCache objectCache;
 
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
@@ -90,7 +97,6 @@ public class ResourceCrawlerService {
         );
     }
 
-    @Autowired
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
             RuleEngine ruleEngine,
@@ -101,6 +107,30 @@ public class ResourceCrawlerService {
             CrawlSingleflight singleflight,
             CrawlerResultCache resultCache
     ) {
+        this(
+                pluginRegistry,
+                ruleEngine,
+                mediaExtractor,
+                properties,
+                fallbacks,
+                circuitBoard,
+                singleflight,
+                resultCache,
+                (CrawlResultCache) null
+        );
+    }
+
+    public ResourceCrawlerService(
+            PluginRegistry pluginRegistry,
+            RuleEngine ruleEngine,
+            MediaExtractor mediaExtractor,
+            AppProperties properties,
+            List<SiteFallback> fallbacks,
+            SiteCircuitBoard circuitBoard,
+            CrawlSingleflight singleflight,
+            CrawlerResultCache resultCache,
+            CrawlResultCache objectCache
+    ) {
         this.pluginRegistry = pluginRegistry;
         this.ruleEngine = ruleEngine;
         this.mediaExtractor = mediaExtractor;
@@ -109,6 +139,32 @@ public class ResourceCrawlerService {
         this.circuitBoard = circuitBoard == null ? SiteCircuitBoard.disabled() : circuitBoard;
         this.singleflight = singleflight == null ? CrawlSingleflight.direct() : singleflight;
         this.resultCache = resultCache == null ? CrawlerResultCache.noop() : resultCache;
+        this.objectCache = objectCache;
+    }
+
+    @Autowired
+    public ResourceCrawlerService(
+            PluginRegistry pluginRegistry,
+            RuleEngine ruleEngine,
+            MediaExtractor mediaExtractor,
+            AppProperties properties,
+            List<SiteFallback> fallbacks,
+            SiteCircuitBoard circuitBoard,
+            CrawlSingleflight singleflight,
+            CrawlerResultCache resultCache,
+            ObjectProvider<CrawlResultCache> objectCache
+    ) {
+        this(
+                pluginRegistry,
+                ruleEngine,
+                mediaExtractor,
+                properties,
+                fallbacks,
+                circuitBoard,
+                singleflight,
+                resultCache,
+                objectCache == null ? null : objectCache.getIfAvailable()
+        );
     }
 
     public CrawlResourceResult crawl(String keyword, String site) {
@@ -117,25 +173,66 @@ public class ResourceCrawlerService {
             CrawlResourceResult cached = resultCache.getPlay(lookup);
             if (cached != null) {
                 log.debug("播放缓存命中 {}", lookup);
+                ThinkingReporter.note("命中已保存的检索结果，直接返回。");
                 return cached;
+            }
+            CrawlResourceResult durable = readObjectCache(keyword, site);
+            if (durable != null) {
+                if (hasVideos(durable)) {
+                    resultCache.putPlay(lookup, durable);
+                    resultCache.putCatalog(lookup, CatalogSnapshot.from(durable));
+                }
+                return durable;
             }
             CrawlResourceResult result = crawlUncoalesced(keyword, site);
             if (hasVideos(result)) {
                 resultCache.putPlay(lookup, result);
                 resultCache.putCatalog(lookup, CatalogSnapshot.from(result));
+                writeObjectCache(keyword, site, result);
             }
             return result;
         });
     }
 
+    private CrawlResourceResult readObjectCache(String keyword, String site) {
+        if (objectCache == null) {
+            return null;
+        }
+        try {
+            Optional<CrawlResourceResult> cached = objectCache.find(keyword, site);
+            if (cached.isEmpty()) {
+                return null;
+            }
+            log.info("检索缓存命中 site={} keyword={}", site, keyword);
+            ThinkingReporter.note("命中已保存的检索结果，直接返回。");
+            return cached.get();
+        } catch (RuntimeException ex) {
+            log.warn("读取检索缓存失败，改为现爬: {}", ex.toString());
+            return null;
+        }
+    }
+
+    private void writeObjectCache(String keyword, String site, CrawlResourceResult result) {
+        if (objectCache == null || result == null || result.error() != null) {
+            return;
+        }
+        try {
+            objectCache.save(keyword, site, result);
+        } catch (RuntimeException ex) {
+            log.warn("写入检索缓存失败: {}", ex.toString());
+        }
+    }
+
     CrawlResourceResult crawlUncoalesced(String keyword, String site) {
         int skipped = 0;
+        GenerationRuns.checkpoint();
         SiteFallback dedicated = findFallback(site);
         if (dedicated != null && dedicated.enabled()) {
             if (!circuitBoard.allowRequest(UpstreamKeys.fallback(dedicated.name()))) {
                 skipped++;
                 log.info("跳过熔断中的降级站点 {}", dedicated.name());
             } else {
+                ThinkingReporter.note("优先在「" + label(dedicated.name()) + "」检索「" + keyword + "」。");
                 CrawlResourceResult dedicatedResult = safeFallback(dedicated, keyword);
                 if (hasVideos(dedicatedResult)) {
                     return dedicatedResult;
@@ -149,6 +246,7 @@ public class ResourceCrawlerService {
         }
 
         for (SiteFallback fallback : fallbacks) {
+            GenerationRuns.checkpoint();
             if (!fallback.enabled() || (dedicated != null && fallback.name().equals(dedicated.name()))) {
                 continue;
             }
@@ -158,6 +256,7 @@ public class ResourceCrawlerService {
                 continue;
             }
             log.info("插件未拿到播放地址，开始降级到 {}", fallback.name());
+            ThinkingReporter.note("当前站点没有播放地址，改到「" + label(fallback.name()) + "」再试。");
             CrawlResourceResult result = safeFallback(fallback, keyword);
             if (hasVideos(result)) {
                 log.info("已从 {} 拿到播放地址", fallback.name());
@@ -206,6 +305,7 @@ public class ResourceCrawlerService {
                 continue;
             }
             try {
+                ThinkingReporter.note("正在打开「" + label(rule.getName()) + "」的搜索页。");
                 CrawlResourceResult result = crawlWithRule(keyword, site, rule);
                 recordUpstreamOutcome(key, result, null);
                 if (hasVideos(result)) {
@@ -214,6 +314,8 @@ public class ResourceCrawlerService {
                 if (best == null || (!hasResources(best) && hasResources(result))) {
                     best = result;
                 }
+            } catch (GenerationStoppedException ex) {
+                throw ex;
             } catch (Exception ex) {
                 lastError = ex;
                 recordUpstreamOutcome(key, null, ex);
@@ -239,6 +341,8 @@ public class ResourceCrawlerService {
             );
             recordUpstreamOutcome(key, result, null);
             return result;
+        } catch (GenerationStoppedException ex) {
+            throw ex;
         } catch (Exception ex) {
             recordUpstreamOutcome(key, null, ex);
             log.warn("降级站点 {} 检索「{}」失败: {}", fallback.name(), keyword, userFacingMessage(ex));
@@ -299,6 +403,7 @@ public class ResourceCrawlerService {
 
     private CrawlResourceResult crawlWithRule(String keyword, String requestedSite, PluginRule rule) {
         List<SearchItem> searchItems = ruleEngine.search(rule, keyword);
+        ThinkingReporter.note("「" + label(rule.getName()) + "」返回了 " + searchItems.size() + " 条结果，正在解析剧集。");
 
         List<CrawlResourceResult.VideoResource> videos = new ArrayList<>();
         List<CrawlResourceResult.LinkResource> links = new ArrayList<>();
@@ -309,6 +414,7 @@ public class ResourceCrawlerService {
 
         int maxResults = properties.crawler().maxSearchResults();
         int maxEpisodes = properties.crawler().maxEpisodesPerRoad();
+        int notedEpisodes = 0;
 
         for (SearchItem item : searchItems.stream().limit(maxResults).toList()) {
             addLink(links, seenLinkUrls, item.name(), item.src(), "搜索结果");
@@ -316,7 +422,10 @@ public class ResourceCrawlerService {
 
             List<Road> roads;
             try {
+                GenerationRuns.checkpoint();
                 roads = ruleEngine.queryChapters(rule, item.src());
+            } catch (GenerationStoppedException ex) {
+                throw ex;
             } catch (Exception ex) {
                 log.warn("站点 {} 解析剧集失败: {}", rule.getName(), userFacingMessage(ex));
                 continue;
@@ -334,6 +443,14 @@ public class ResourceCrawlerService {
                     }
 
                     try {
+                        GenerationRuns.checkpoint();
+                        if (notedEpisodes < 6) {
+                            ThinkingReporter.note("正在读取「" + shortTitle(episodeName) + "」。");
+                            notedEpisodes++;
+                        } else if (notedEpisodes == 6) {
+                            ThinkingReporter.note("后续剧集仍在读取。");
+                            notedEpisodes++;
+                        }
                         FetchedPage page = ruleEngine.fetchPageDetailed(rule, episodeUrl);
                         String pageHtml = page.html();
                         for (String videoUrl : mediaExtractor.extractVideoUrls(pageHtml, episodeUrl)) {
@@ -352,6 +469,8 @@ public class ResourceCrawlerService {
                                 addVideo(videos, seenVideoUrls, episodeName, linkUrl, episodeUrl, road.name());
                             }
                         }
+                    } catch (GenerationStoppedException ex) {
+                        throw ex;
                     } catch (Exception ex) {
                         log.warn("站点 {} 剧集页抓取失败 {}: {}", rule.getName(), episodeUrl, userFacingMessage(ex));
                     }
@@ -367,6 +486,27 @@ public class ResourceCrawlerService {
                 links,
                 images
         );
+    }
+
+    private static String label(String name) {
+        if (name == null || name.isBlank()) {
+            return "站点";
+        }
+        if ("YHDM".equalsIgnoreCase(name)) {
+            return "樱花动漫";
+        }
+        if ("SiliSili".equalsIgnoreCase(name)) {
+            return "嘶哩嘶哩";
+        }
+        return name;
+    }
+
+    private static String shortTitle(String title) {
+        if (title == null || title.isBlank()) {
+            return "剧集页面";
+        }
+        String trimmed = title.strip();
+        return trimmed.length() <= 24 ? trimmed : trimmed.substring(0, 24) + "…";
     }
 
     public static String userFacingMessage(Throwable error) {

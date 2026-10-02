@@ -20,6 +20,15 @@ class SseEncoderTest {
     }
 
     @Test
+    void thinkingDeltaStaysOutOfTheAnswerChannel() {
+        String frame = SseEncoder.thinkingDelta("正在打开搜索页。\n");
+        assertThat(frame).startsWith("event: chunk\n");
+        assertThat(frame).contains("\"type\":\"thinking_delta\"");
+        assertThat(frame).contains("正在打开搜索页。");
+        assertThat(frame).doesNotContain("\"type\":\"text_delta\"");
+    }
+
+    @Test
     void resourceBundleUsesChunkEventAndSnakeCaseFields() {
         String frame = SseEncoder.resourceBundle(java.util.Map.of(
                 "anime_title", "鬼灭之刃",

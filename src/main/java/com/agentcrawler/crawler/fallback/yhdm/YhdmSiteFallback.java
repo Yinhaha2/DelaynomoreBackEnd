@@ -101,6 +101,8 @@ public class YhdmSiteFallback implements SiteFallback {
                 try {
                     String detailHtml = FallbackHttp.getFollowingHops(httpClient, item.src(), headers);
                     roads = YhdmHtmlParser.parseChapters(detailHtml, base + "/");
+                } catch (com.agentcrawler.streaming.GenerationStoppedException ex) {
+                    throw ex;
                 } catch (Exception ex) {
                     log.warn("YHDM 详情失败 {}: {}", item.src(), ex.getMessage());
                     continue;
@@ -119,6 +121,8 @@ public class YhdmSiteFallback implements SiteFallback {
                             for (String video : mediaExtractor.extractVideoUrls(playHtml, episodeUrl)) {
                                 addVideo(videos, seenVideo, episodeName, video, episodeUrl, road.name());
                             }
+                        } catch (com.agentcrawler.streaming.GenerationStoppedException ex) {
+                            throw ex;
                         } catch (Exception ex) {
                             log.warn("YHDM 播放页失败 {}: {}", episodeUrl, ex.getMessage());
                         }
@@ -126,6 +130,8 @@ public class YhdmSiteFallback implements SiteFallback {
                 }
             }
             return new CrawlResourceResult(keyword, name(), name(), videos, links, images);
+        } catch (com.agentcrawler.streaming.GenerationStoppedException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("YHDM 检索「{}」失败: {}", keyword, ex.getMessage());
             return CrawlResourceResult.failed(keyword, name(), name(), "樱花动漫暂时无法访问，请稍后再试。");

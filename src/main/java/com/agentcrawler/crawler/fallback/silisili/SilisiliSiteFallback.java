@@ -101,6 +101,8 @@ public class SilisiliSiteFallback implements SiteFallback {
                 try {
                     String detailHtml = FallbackHttp.getFollowingHops(httpClient, item.src(), headers);
                     roads = SilisiliHtmlParser.parseChapters(detailHtml, base + "/");
+                } catch (com.agentcrawler.streaming.GenerationStoppedException ex) {
+                    throw ex;
                 } catch (Exception ex) {
                     log.warn("SiliSili 详情失败 {}: {}", item.src(), ex.getMessage());
                     continue;
@@ -116,6 +118,8 @@ public class SilisiliSiteFallback implements SiteFallback {
                 }
             }
             return new CrawlResourceResult(keyword, name(), name(), videos, links, images);
+        } catch (com.agentcrawler.streaming.GenerationStoppedException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("SiliSili 检索「{}」失败: {}", keyword, ex.getMessage());
             return CrawlResourceResult.failed(keyword, name(), name(), "SiliSili 暂时无法访问，请稍后再试。");
@@ -144,6 +148,8 @@ public class SilisiliSiteFallback implements SiteFallback {
             for (String video : MediaUrls.harvestAll(posted + "\n" + html)) {
                 addVideo(videos, seenVideo, episodeName, video, episodeUrl, roadName);
             }
+        } catch (com.agentcrawler.streaming.GenerationStoppedException ex) {
+            throw ex;
         } catch (Exception ex) {
             log.warn("SiliSili 播放页失败 {}: {}", episodeUrl, ex.getMessage());
         }

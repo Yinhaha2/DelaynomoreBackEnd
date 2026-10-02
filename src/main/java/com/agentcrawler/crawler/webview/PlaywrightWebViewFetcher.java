@@ -1,6 +1,7 @@
 package com.agentcrawler.crawler.webview;
 
 import com.agentcrawler.config.AppProperties;
+import com.agentcrawler.streaming.GenerationRuns;
 import com.agentcrawler.config.CrawlerReliabilityProperties;
 import com.agentcrawler.crawler.media.MediaUrls;
 import com.microsoft.playwright.Browser;
@@ -80,6 +81,7 @@ public class PlaywrightWebViewFetcher implements WebViewFetcher {
         if (!available()) {
             throw new IllegalStateException("Playwright WebView is not available");
         }
+        GenerationRuns.checkpoint();
         boolean acquired;
         try {
             acquired = pageSlots.tryAcquire(acquireTimeoutSeconds, TimeUnit.SECONDS);

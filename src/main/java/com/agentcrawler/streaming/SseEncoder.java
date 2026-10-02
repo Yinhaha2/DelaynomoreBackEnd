@@ -30,6 +30,14 @@ public final class SseEncoder {
         return encode(SseEventName.DONE, payload);
     }
 
+    public static String session(String conversationId, String messageId) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "session");
+        payload.put("conversation_id", conversationId);
+        payload.put("message_id", messageId);
+        return chunk(payload);
+    }
+
     public static String error(String code, String message) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "error");
@@ -41,6 +49,13 @@ public final class SseEncoder {
     public static String textDelta(String content) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("type", "text_delta");
+        payload.put("content", content);
+        return chunk(payload);
+    }
+
+    public static String thinkingDelta(String content) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", "thinking_delta");
         payload.put("content", content);
         return chunk(payload);
     }
