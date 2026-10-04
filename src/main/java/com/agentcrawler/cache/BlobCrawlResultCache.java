@@ -18,18 +18,35 @@ public final class BlobCrawlResultCache implements CrawlResultCache {
     private final ObjectMapper objectMapper;
     private final long maxBytes;
     private final Clock clock;
+    private final RevalidateSchedule schedule;
     private CrawlCacheIndex index = new CrawlCacheIndex();
     private boolean indexLoaded;
 
     public BlobCrawlResultCache(ObjectBlobStore store, ObjectMapper objectMapper, long maxBytes, Clock clock) {
+        this(store, objectMapper, maxBytes, clock, RevalidateSchedule.disabled());
+    }
+
+    public BlobCrawlResultCache(
+            ObjectBlobStore store,
+            ObjectMapper objectMapper,
+            long maxBytes,
+            Clock clock,
+            RevalidateSchedule schedule
+    ) {
         this.store = store;
         this.objectMapper = objectMapper;
         this.maxBytes = maxBytes;
         this.clock = clock;
+        this.schedule = schedule == null ? RevalidateSchedule.disabled() : schedule;
     }
 
     @Override
     public synchronized Optional<CrawlResourceResult> find(String keyword, String site) {
+        return lookup(keyword, site).map(CacheLookup::result);
+    }
+
+    @Override
+    public synchronized Optional<CacheLookup> lookup(String keyword, String site) {
         if (CacheObjectIds.blankKeyword(keyword)) {
             return Optional.empty();
         }
@@ -48,8 +65,9 @@ public final class BlobCrawlResultCache implements CrawlResultCache {
             if (!current.touch(id, clock.millis())) {
                 current.upsert(id, raw.get().length, clock.millis());
             }
+            boolean due = markSchedule(current, id);
             persist();
-            return Optional.of(result);
+            return Optional.of(new CacheLookup(result, due));
         } catch (Exception ex) {
             log.warn("读取检索缓存失败: {}", ex.toString());
             return Optional.empty();
@@ -67,6 +85,9 @@ public final class BlobCrawlResultCache implements CrawlResultCache {
             store.put(objectKey(id), body);
             CrawlCacheIndex current = index();
             current.upsert(id, body.length, clock.millis());
+            if (schedule.enabled()) {
+                current.schedule(id, schedule.next(clock.millis()));
+            }
             List<String> removed = current.evictDownTo(maxBytes, id);
             for (String oldId : removed) {
                 try {
@@ -79,6 +100,46 @@ public final class BlobCrawlResultCache implements CrawlResultCache {
         } catch (Exception ex) {
             log.warn("写入检索缓存失败: {}", ex.toString());
         }
+    }
+
+    @Override
+    public synchronized void invalidate(String keyword, String site) {
+        if (CacheObjectIds.blankKeyword(keyword)) {
+            return;
+        }
+        String id = CacheObjectIds.of(keyword, site);
+        try {
+            store.delete(objectKey(id));
+        } catch (RuntimeException ex) {
+            log.warn("删除失效检索缓存失败: {}", ex.toString());
+        }
+        index().remove(id);
+        persist();
+    }
+
+    @Override
+    public synchronized void postpone(String keyword, String site, boolean soon) {
+        if (!schedule.enabled() || CacheObjectIds.blankKeyword(keyword)) {
+            return;
+        }
+        String id = CacheObjectIds.of(keyword, site);
+        long at = soon ? schedule.soon(clock.millis()) : schedule.next(clock.millis());
+        if (index().schedule(id, at)) {
+            persist();
+        }
+    }
+
+    private boolean markSchedule(CrawlCacheIndex current, String id) {
+        if (!schedule.enabled()) {
+            return false;
+        }
+        long at = current.revalidateAt(id);
+        long now = clock.millis();
+        if (at <= 0) {
+            current.schedule(id, schedule.next(now));
+            return false;
+        }
+        return now >= at;
     }
 
     private CrawlCacheIndex index() {

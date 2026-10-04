@@ -71,7 +71,7 @@ public final class CrawlResultEmitter {
         }
     }
 
-    static Map<String, Object> toBundlePayload(
+    public static Map<String, Object> toBundlePayload(
             CrawlResourceResult result,
             ResourceRouteGrouper.GroupedResources grouped
     ) {
@@ -100,6 +100,8 @@ public final class CrawlResultEmitter {
         if (result.pluginName() != null && !result.pluginName().isBlank()) {
             payload.put("plugin_name", result.pluginName());
         }
+        payload.put("keyword", result.keyword() == null ? "" : result.keyword());
+        payload.put("site", result.site() == null ? "" : result.site());
         payload.put("current_episodes_count", grouped.uniqueEpisodeCount());
         payload.put("sources", sources);
         return payload;

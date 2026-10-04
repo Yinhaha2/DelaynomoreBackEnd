@@ -118,6 +118,22 @@ class CrawlerResultCacheTest {
     }
 
     @Test
+    void evictDropsPlayAndCatalogFromLocalAndRemote() {
+        CrawlerCacheProperties properties = CrawlerCacheProperties.caffeineOnly();
+        CaffeineCrawlerResultCache local = new CaffeineCrawlerResultCache(properties);
+        MapRemoteKvStore remote = new MapRemoteKvStore();
+        TieredCrawlerResultCache cache = new TieredCrawlerResultCache(local, remote, properties, new ObjectMapper());
+        cache.putPlay("dm84:芙莉莲", sample());
+        cache.putCatalog("dm84:芙莉莲", CatalogSnapshot.from(sample()));
+
+        cache.evict("dm84:芙莉莲");
+
+        assertThat(cache.getPlay("dm84:芙莉莲")).isNull();
+        assertThat(cache.getCatalog("dm84:芙莉莲")).isNull();
+        assertThat(remote.values).isEmpty();
+    }
+
+    @Test
     void unreachableRedisDegradesToMissWithoutThrowing() {
         CrawlerCacheProperties.Redis redis = new CrawlerCacheProperties.Redis(
                 true, "127.0.0.1", 1, 0, "", 200
@@ -143,6 +159,11 @@ class CrawlerResultCacheTest {
         @Override
         public void set(String key, String value, Duration ttl) {
             values.put(key, value);
+        }
+
+        @Override
+        public void delete(String key) {
+            values.remove(key);
         }
     }
 

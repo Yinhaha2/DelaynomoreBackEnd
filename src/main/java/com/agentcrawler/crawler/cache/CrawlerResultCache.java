@@ -11,6 +11,9 @@ public interface CrawlerResultCache {
 
     void putCatalog(String lookupKey, CatalogSnapshot snapshot);
 
+    default void evict(String lookupKey) {
+    }
+
     static CrawlerResultCache noop() {
         return new CrawlerResultCache() {
             @Override

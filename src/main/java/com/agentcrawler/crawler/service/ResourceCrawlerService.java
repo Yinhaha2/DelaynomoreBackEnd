@@ -14,7 +14,10 @@ import com.agentcrawler.crawler.plugin.PluginRegistry;
 import com.agentcrawler.crawler.cache.CatalogSnapshot;
 import com.agentcrawler.crawler.cache.CrawlCacheKeys;
 import com.agentcrawler.crawler.cache.CrawlerResultCache;
+import com.agentcrawler.agent.session.SessionContextHolder;
+import com.agentcrawler.cache.CacheLookup;
 import com.agentcrawler.crawler.reliability.CrawlSingleflight;
+import com.agentcrawler.crawler.reliability.PlaybackProbe;
 import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
 import com.agentcrawler.crawler.reliability.UpstreamFailureClassifier;
 import com.agentcrawler.crawler.reliability.UpstreamKeys;
@@ -34,6 +37,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 @Service
 public class ResourceCrawlerService {
@@ -48,6 +54,9 @@ public class ResourceCrawlerService {
     private final CrawlSingleflight singleflight;
     private final CrawlerResultCache resultCache;
     private final CrawlResultCache objectCache;
+    private final PlaybackProbe playbackProbe;
+    private final Set<String> refreshing = ConcurrentHashMap.newKeySet();
+    private volatile ExecutorService revalidator;
 
     public ResourceCrawlerService(
             PluginRegistry pluginRegistry,
@@ -131,6 +140,32 @@ public class ResourceCrawlerService {
             CrawlerResultCache resultCache,
             CrawlResultCache objectCache
     ) {
+        this(
+                pluginRegistry,
+                ruleEngine,
+                mediaExtractor,
+                properties,
+                fallbacks,
+                circuitBoard,
+                singleflight,
+                resultCache,
+                objectCache,
+                null
+        );
+    }
+
+    public ResourceCrawlerService(
+            PluginRegistry pluginRegistry,
+            RuleEngine ruleEngine,
+            MediaExtractor mediaExtractor,
+            AppProperties properties,
+            List<SiteFallback> fallbacks,
+            SiteCircuitBoard circuitBoard,
+            CrawlSingleflight singleflight,
+            CrawlerResultCache resultCache,
+            CrawlResultCache objectCache,
+            PlaybackProbe playbackProbe
+    ) {
         this.pluginRegistry = pluginRegistry;
         this.ruleEngine = ruleEngine;
         this.mediaExtractor = mediaExtractor;
@@ -140,6 +175,7 @@ public class ResourceCrawlerService {
         this.singleflight = singleflight == null ? CrawlSingleflight.direct() : singleflight;
         this.resultCache = resultCache == null ? CrawlerResultCache.noop() : resultCache;
         this.objectCache = objectCache;
+        this.playbackProbe = playbackProbe;
     }
 
     @Autowired
@@ -152,7 +188,8 @@ public class ResourceCrawlerService {
             SiteCircuitBoard circuitBoard,
             CrawlSingleflight singleflight,
             CrawlerResultCache resultCache,
-            ObjectProvider<CrawlResultCache> objectCache
+            ObjectProvider<CrawlResultCache> objectCache,
+            ObjectProvider<PlaybackProbe> playbackProbe
     ) {
         this(
                 pluginRegistry,
@@ -163,7 +200,8 @@ public class ResourceCrawlerService {
                 circuitBoard,
                 singleflight,
                 resultCache,
-                objectCache == null ? null : objectCache.getIfAvailable()
+                objectCache == null ? null : objectCache.getIfAvailable(),
+                playbackProbe == null ? null : playbackProbe.getIfAvailable()
         );
     }
 
@@ -186,12 +224,22 @@ public class ResourceCrawlerService {
             }
             CrawlResourceResult result = crawlUncoalesced(keyword, site);
             if (hasVideos(result)) {
-                resultCache.putPlay(lookup, result);
-                resultCache.putCatalog(lookup, CatalogSnapshot.from(result));
-                writeObjectCache(keyword, site, result);
+                remember(keyword, site, result);
             }
             return result;
         });
+    }
+
+    /**
+     * 用户确认链接失效后的被动刷新。同一站点同一关键词只重爬一次，并先删掉旧缓存。
+     */
+    public CrawlResourceResult reload(String keyword, String site) {
+        if (keyword == null || keyword.isBlank()) {
+            return CrawlResourceResult.failed(keyword, site, site, "缺少检索词，无法重新抓取。");
+        }
+        String normalized = keyword.trim();
+        String flight = "force\0" + CrawlSingleflight.key(site, normalized);
+        return singleflight.run(flight, () -> forceCrawl(normalized, site));
     }
 
     private CrawlResourceResult readObjectCache(String keyword, String site) {
@@ -199,16 +247,104 @@ public class ResourceCrawlerService {
             return null;
         }
         try {
-            Optional<CrawlResourceResult> cached = objectCache.find(keyword, site);
+            Optional<CacheLookup> cached = objectCache.lookup(keyword, site);
             if (cached.isEmpty()) {
                 return null;
             }
             log.info("检索缓存命中 site={} keyword={}", site, keyword);
             ThinkingReporter.note("命中已保存的检索结果，直接返回。");
-            return cached.get();
+            CacheLookup hit = cached.get();
+            if (hit.dueForCheck()) {
+                ThinkingReporter.note("这条结果到了校验时间，先返回现有链接，后台再确认是否还能播放。");
+                scheduleRevalidate(keyword, site, hit.result());
+            }
+            return hit.result();
         } catch (RuntimeException ex) {
             log.warn("读取检索缓存失败，改为现爬: {}", ex.toString());
             return null;
+        }
+    }
+
+    private void remember(String keyword, String site, CrawlResourceResult result) {
+        String lookup = CrawlCacheKeys.lookup(site, keyword);
+        resultCache.putPlay(lookup, result);
+        resultCache.putCatalog(lookup, CatalogSnapshot.from(result));
+        writeObjectCache(keyword, site, result);
+    }
+
+    private CrawlResourceResult forceCrawl(String keyword, String site) {
+        String generationId = "reload:" + CrawlSingleflight.key(site, keyword);
+        GenerationRuns.GenerationRun run = GenerationRuns.begin(generationId);
+        String previousSession = SessionContextHolder.get();
+        SessionContextHolder.set(generationId);
+        try {
+            if (objectCache != null) {
+                objectCache.invalidate(keyword, site);
+            }
+            resultCache.evict(CrawlCacheKeys.lookup(site, keyword));
+            CrawlResourceResult result = crawlUncoalesced(keyword, site);
+            if (hasVideos(result)) {
+                remember(keyword, site, result);
+            }
+            return result;
+        } finally {
+            if (previousSession == null) {
+                SessionContextHolder.clear();
+            } else {
+                SessionContextHolder.set(previousSession);
+            }
+            GenerationRuns.end(generationId, run);
+        }
+    }
+
+    private void scheduleRevalidate(String keyword, String site, CrawlResourceResult stale) {
+        if (playbackProbe == null || stale == null) {
+            return;
+        }
+        String flight = "revalidate\0" + CrawlSingleflight.key(site, keyword);
+        if (!refreshing.add(flight)) {
+            return;
+        }
+        revalidator().execute(() -> {
+            try {
+                revalidateCached(keyword, site, stale);
+            } catch (RuntimeException ex) {
+                log.warn("异步校验检索缓存失败: {}", ex.toString());
+            } finally {
+                refreshing.remove(flight);
+            }
+        });
+    }
+
+    void revalidateCached(String keyword, String site, CrawlResourceResult stale) {
+        if (playbackProbe == null || stale == null) {
+            return;
+        }
+        PlaybackProbe.Verdict verdict = playbackProbe.probe(stale);
+        if (verdict == PlaybackProbe.Verdict.STALE) {
+            log.info("播放地址已失效，开始重爬 site={} keyword={}", site, keyword);
+            reload(keyword, site);
+            return;
+        }
+        if (objectCache != null) {
+            objectCache.postpone(keyword, site, verdict != PlaybackProbe.Verdict.FRESH);
+        }
+    }
+
+    private ExecutorService revalidator() {
+        ExecutorService current = revalidator;
+        if (current != null) {
+            return current;
+        }
+        synchronized (this) {
+            if (revalidator == null) {
+                revalidator = Executors.newSingleThreadExecutor(task -> {
+                    Thread thread = new Thread(task, "cache-revalidate");
+                    thread.setDaemon(true);
+                    return thread;
+                });
+            }
+            return revalidator;
         }
     }
 

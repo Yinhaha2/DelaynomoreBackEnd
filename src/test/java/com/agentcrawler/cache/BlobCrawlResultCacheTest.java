@@ -48,6 +48,52 @@ class BlobCrawlResultCacheTest {
         assertEquals("葬送的芙莉莲", hit.keyword());
     }
 
+    @Test
+    void softExpiryStaysReadableUntilTheCheckTimeThenInvalidateDropsIndexAndObject() {
+        MapStore store = new MapStore();
+        MutableClock clock = new MutableClock();
+        BlobCrawlResultCache cache = new BlobCrawlResultCache(
+                store,
+                new ObjectMapper(),
+                10_000,
+                clock,
+                RevalidateSchedule.of(1_000, 0)
+        );
+        cache.save("葬送的芙莉莲", "DM84", sample("葬送的芙莉莲", "https://cdn.example/a.m3u8"));
+
+        CacheLookup fresh = cache.lookup("葬送的芙莉莲", "DM84").orElseThrow();
+        assertFalse(fresh.dueForCheck());
+
+        clock.plusSeconds(2);
+        CacheLookup due = cache.lookup("葬送的芙莉莲", "DM84").orElseThrow();
+        assertTrue(due.dueForCheck());
+        assertEquals("https://cdn.example/a.m3u8", due.result().videos().get(0).url());
+
+        cache.invalidate("葬送的芙莉莲", "DM84");
+        assertFalse(cache.find("葬送的芙莉莲", "DM84").isPresent());
+        String id = CacheObjectIds.of("葬送的芙莉莲", "DM84");
+        assertTrue(store.data.keySet().stream().noneMatch(key -> key.contains(id)));
+        assertFalse(new String(store.data.get(BlobCrawlResultCache.INDEX_KEY)).contains(id));
+    }
+
+    @Test
+    void legacyEntryWithoutACheckTimeIsScheduledInsteadOfExpiringImmediately() {
+        MapStore store = new MapStore();
+        MutableClock clock = new MutableClock();
+        ObjectMapper mapper = new ObjectMapper();
+        new BlobCrawlResultCache(store, mapper, 10_000, clock)
+                .save("葬送的芙莉莲", "DM84", sample("葬送的芙莉莲", "https://cdn.example/a.m3u8"));
+
+        BlobCrawlResultCache scheduled = new BlobCrawlResultCache(
+                store,
+                mapper,
+                10_000,
+                clock,
+                RevalidateSchedule.of(60_000, 0)
+        );
+        assertFalse(scheduled.lookup("葬送的芙莉莲", "DM84").orElseThrow().dueForCheck());
+    }
+
     private static CrawlResourceResult sample(String title, String url) {
         return new CrawlResourceResult(
                 title,

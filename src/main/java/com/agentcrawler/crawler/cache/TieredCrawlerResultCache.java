@@ -70,6 +70,20 @@ public class TieredCrawlerResultCache implements CrawlerResultCache {
         writeRemote(catalogKey(lookupKey), snapshot, Duration.ofSeconds(properties.catalogTtlSeconds()));
     }
 
+    @Override
+    public void evict(String lookupKey) {
+        local.evict(lookupKey);
+        if (lookupKey == null || lookupKey.isBlank() || remote == null) {
+            return;
+        }
+        try {
+            remote.delete(playKey(lookupKey));
+            remote.delete(catalogKey(lookupKey));
+        } catch (RuntimeException ex) {
+            log.warn("删除远程缓存失败 {}: {}", lookupKey, ex.toString());
+        }
+    }
+
     private String playKey(String lookupKey) {
         return CrawlCacheKeys.playRedisKey(properties.keyPrefix(), lookupKey);
     }

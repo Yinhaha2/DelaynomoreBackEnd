@@ -56,4 +56,13 @@ public class CaffeineCrawlerResultCache implements CrawlerResultCache {
         }
         catalog.put(lookupKey, snapshot);
     }
+
+    @Override
+    public void evict(String lookupKey) {
+        if (lookupKey == null || lookupKey.isBlank()) {
+            return;
+        }
+        play.invalidate(lookupKey);
+        catalog.invalidate(lookupKey);
+    }
 }

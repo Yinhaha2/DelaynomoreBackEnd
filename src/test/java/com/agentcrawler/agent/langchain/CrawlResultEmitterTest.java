@@ -44,6 +44,8 @@ class CrawlResultEmitterTest {
         String all = String.join("", frames);
         assertThat(all).contains("\"type\":\"resource_bundle\"");
         assertThat(all).contains("\"anime_title\":\"鬼灭之刃\"");
+        assertThat(all).contains("\"keyword\":\"鬼灭之刃\"");
+        assertThat(all).contains("\"site\":\"SiliSili\"");
         assertThat(all).contains("\"source_name\":\"高速直链 (R2)\"");
         assertThat(all).contains("\"type\":\"video\"");
         assertThat(all).contains("\"type\":\"link\"");

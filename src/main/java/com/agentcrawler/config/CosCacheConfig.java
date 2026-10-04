@@ -1,8 +1,10 @@
 package com.agentcrawler.config;
 
 import com.agentcrawler.cache.BlobCrawlResultCache;
+import com.agentcrawler.cache.CacheLookup;
 import com.agentcrawler.cache.CosObjectBlobStore;
 import com.agentcrawler.cache.CrawlResultCache;
+import com.agentcrawler.cache.RevalidateSchedule;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qcloud.cos.COSClient;
 import com.qcloud.cos.ClientConfig;
@@ -40,20 +42,29 @@ public class CosCacheConfig {
         clientConfig.setConnectionTimeout(10_000);
         clientConfig.setSocketTimeout(20_000);
         COSClient client = new COSClient(credentials, clientConfig);
-        boolean available = probe(client, bucket, maxBytes);
+        long ttlSeconds = parseSeconds(env.getProperty("COS_REVALIDATE_TTL_SECONDS"), 7_200);
+        long jitterSeconds = parseSeconds(env.getProperty("COS_REVALIDATE_JITTER_SECONDS"), 1_800);
+        boolean available = probe(client, bucket, maxBytes, ttlSeconds, jitterSeconds);
         BlobCrawlResultCache store = new BlobCrawlResultCache(
                 new CosObjectBlobStore(client, bucket),
                 objectMapper,
                 maxBytes,
-                Clock.systemUTC()
+                Clock.systemUTC(),
+                RevalidateSchedule.of(ttlSeconds * 1000L, jitterSeconds * 1000L)
         );
         return new ManagedCrawlResultCache(client, store, available);
     }
 
-    private static boolean probe(COSClient client, String bucket, long maxBytes) {
+    private static boolean probe(COSClient client, String bucket, long maxBytes, long ttlSeconds, long jitterSeconds) {
         try {
             client.headBucket(new HeadBucketRequest(bucket));
-            log.info("检索缓存已连接 bucket={} maxBytes={}", bucket, maxBytes);
+            log.info(
+                    "检索缓存已连接 bucket={} maxBytes={} revalidateTtlSeconds={} jitterSeconds={}",
+                    bucket,
+                    maxBytes,
+                    ttlSeconds,
+                    jitterSeconds
+            );
             return true;
         } catch (CosServiceException ex) {
             log.warn("检索缓存连接失败，将继续现爬 status={} errorCode={}", ex.getStatusCode(), ex.getErrorCode());
@@ -73,6 +84,18 @@ public class CosCacheConfig {
             return value > 0 ? value : DEFAULT_MAX_BYTES;
         } catch (NumberFormatException ex) {
             return DEFAULT_MAX_BYTES;
+        }
+    }
+
+    private static long parseSeconds(String raw, long fallback) {
+        if (raw == null || raw.isBlank()) {
+            return fallback;
+        }
+        try {
+            long value = Long.parseLong(raw.trim());
+            return value >= 0 ? value : fallback;
+        } catch (NumberFormatException ex) {
+            return fallback;
         }
     }
 
@@ -101,6 +124,30 @@ public class CosCacheConfig {
                 return;
             }
             delegate.save(keyword, site, result);
+        }
+
+        @Override
+        public java.util.Optional<CacheLookup> lookup(String keyword, String site) {
+            if (!available) {
+                return java.util.Optional.empty();
+            }
+            return delegate.lookup(keyword, site);
+        }
+
+        @Override
+        public void invalidate(String keyword, String site) {
+            if (!available) {
+                return;
+            }
+            delegate.invalidate(keyword, site);
+        }
+
+        @Override
+        public void postpone(String keyword, String site, boolean soon) {
+            if (!available) {
+                return;
+            }
+            delegate.postpone(keyword, site, soon);
         }
 
         @Override

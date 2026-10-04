@@ -50,6 +50,20 @@ final class CrawlCacheIndex {
         return entries.removeIf(entry -> key.equals(entry.key));
     }
 
+    boolean schedule(String key, long revalidateAtEpochMs) {
+        Entry existing = find(key);
+        if (existing == null) {
+            return false;
+        }
+        existing.revalidateAtEpochMs = revalidateAtEpochMs;
+        return true;
+    }
+
+    long revalidateAt(String key) {
+        Entry existing = find(key);
+        return existing == null ? 0 : existing.revalidateAtEpochMs;
+    }
+
     List<String> evictDownTo(long maxBytes, String protectKey) {
         List<String> removed = new ArrayList<>();
         while (totalBytes() > maxBytes) {
@@ -92,6 +106,8 @@ final class CrawlCacheIndex {
         private String key;
         private long bytes;
         private long lastAccessEpochMs;
+        /** 软过期时间。0 表示还没排过校验，读到时再补上，避免旧数据同时过期。 */
+        private long revalidateAtEpochMs;
 
         public Entry() {}
 
@@ -123,6 +139,14 @@ final class CrawlCacheIndex {
 
         public void setLastAccessEpochMs(long lastAccessEpochMs) {
             this.lastAccessEpochMs = lastAccessEpochMs;
+        }
+
+        public long getRevalidateAtEpochMs() {
+            return revalidateAtEpochMs;
+        }
+
+        public void setRevalidateAtEpochMs(long revalidateAtEpochMs) {
+            this.revalidateAtEpochMs = revalidateAtEpochMs;
         }
     }
 }

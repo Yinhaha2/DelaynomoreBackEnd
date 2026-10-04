@@ -1,5 +1,7 @@
 package com.agentcrawler.crawler.service;
 
+import com.agentcrawler.cache.BlobCrawlResultCache;
+import com.agentcrawler.cache.ObjectBlobStore;
 import com.agentcrawler.config.AppProperties;
 import com.agentcrawler.config.CrawlerCacheProperties;
 import com.agentcrawler.config.CrawlerReliabilityProperties;
@@ -16,13 +18,19 @@ import com.agentcrawler.crawler.fallback.SiteFallback;
 import com.agentcrawler.crawler.cache.CaffeineCrawlerResultCache;
 import com.agentcrawler.crawler.cache.CrawlCacheKeys;
 import com.agentcrawler.crawler.reliability.CrawlSingleflight;
+import com.agentcrawler.crawler.reliability.PlaybackProbe;
 import com.agentcrawler.crawler.reliability.SiteCircuitBoard;
 import com.agentcrawler.crawler.reliability.UpstreamKeys;
 import com.agentcrawler.crawler.webview.FetchedPage;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.time.Clock;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -271,6 +279,142 @@ class ResourceCrawlerServiceTest {
         assertThat(cache.getPlay(CrawlCacheKeys.lookup("DM84", "没有这部"))).isNull();
         service.crawl("没有这部", "DM84");
         org.mockito.Mockito.verify(engine, org.mockito.Mockito.times(2)).search(rule, "没有这部");
+    }
+
+    @Test
+    void reloadDropsTheSavedResultAndCrawlsAgain() throws Exception {
+        PluginRegistry registry = mock(PluginRegistry.class);
+        RuleEngine engine = mock(RuleEngine.class);
+        MediaExtractor extractor = mock(MediaExtractor.class);
+        PluginRule rule = new PluginRule();
+        rule.setName("DM84");
+        when(registry.usable()).thenReturn(List.of(rule));
+        when(registry.resolve("DM84")).thenReturn(rule);
+        SearchItem item = new SearchItem("芙莉莲", "http://example.test/detail/1", "");
+        when(engine.search(rule, "芙莉莲")).thenReturn(List.of(item));
+        when(engine.queryChapters(rule, item.src())).thenReturn(List.of(
+                new Road("线路1", List.of("第1集"), List.of("http://example.test/play/1"))
+        ));
+        when(engine.fetchPageDetailed(rule, "http://example.test/play/1"))
+                .thenReturn(new FetchedPage("<html></html>", List.of("https://cdn.example/a.m3u8")))
+                .thenReturn(new FetchedPage("<html></html>", List.of("https://cdn.example/b.m3u8")));
+        when(extractor.extractVideoUrls(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+        when(extractor.extractImageUrls(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+        when(extractor.extractPageLinks(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+
+        CaffeineCrawlerResultCache playCache = new CaffeineCrawlerResultCache(CrawlerCacheProperties.caffeineOnly());
+        BlobCrawlResultCache objects = new BlobCrawlResultCache(
+                new MemoryBlob(),
+                new ObjectMapper(),
+                1_000_000,
+                Clock.systemUTC()
+        );
+        ResourceCrawlerService service = new ResourceCrawlerService(
+                registry,
+                engine,
+                extractor,
+                testProperties(),
+                List.of(),
+                SiteCircuitBoard.disabled(),
+                new CrawlSingleflight(),
+                playCache,
+                objects
+        );
+
+        assertEquals("https://cdn.example/a.m3u8", service.crawl("芙莉莲", "DM84").videos().get(0).url());
+        assertEquals("https://cdn.example/a.m3u8", service.crawl("芙莉莲", "DM84").videos().get(0).url());
+
+        CrawlResourceResult reloaded = service.reload("芙莉莲", "DM84");
+        assertEquals("https://cdn.example/b.m3u8", reloaded.videos().get(0).url());
+        assertEquals("https://cdn.example/b.m3u8", objects.find("芙莉莲", "DM84").orElseThrow().videos().get(0).url());
+        assertEquals("https://cdn.example/b.m3u8", service.crawl("芙莉莲", "DM84").videos().get(0).url());
+        org.mockito.Mockito.verify(engine, org.mockito.Mockito.times(2)).search(rule, "芙莉莲");
+    }
+
+    @Test
+    void staleProbeRecrawlsAndFreshProbeDoesNot() throws Exception {
+        PluginRegistry registry = mock(PluginRegistry.class);
+        RuleEngine engine = mock(RuleEngine.class);
+        MediaExtractor extractor = mock(MediaExtractor.class);
+        PluginRule rule = new PluginRule();
+        rule.setName("DM84");
+        when(registry.usable()).thenReturn(List.of(rule));
+        when(registry.resolve("DM84")).thenReturn(rule);
+        SearchItem item = new SearchItem("芙莉莲", "http://example.test/detail/1", "");
+        when(engine.search(rule, "芙莉莲")).thenReturn(List.of(item));
+        when(engine.queryChapters(rule, item.src())).thenReturn(List.of(
+                new Road("线路1", List.of("第1集"), List.of("http://example.test/play/1"))
+        ));
+        when(engine.fetchPageDetailed(rule, "http://example.test/play/1"))
+                .thenReturn(new FetchedPage("<html></html>", List.of("https://cdn.example/a.m3u8")))
+                .thenReturn(new FetchedPage("<html></html>", List.of("https://cdn.example/b.m3u8")));
+        when(extractor.extractVideoUrls(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+        when(extractor.extractImageUrls(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+        when(extractor.extractPageLinks(any(), eq("http://example.test/play/1"))).thenReturn(List.of());
+
+        BlobCrawlResultCache objects = new BlobCrawlResultCache(
+                new MemoryBlob(),
+                new ObjectMapper(),
+                1_000_000,
+                Clock.systemUTC()
+        );
+        PlaybackProbe probe = result -> PlaybackProbe.Verdict.FRESH;
+        ResourceCrawlerService freshService = crawlerWithProbe(registry, engine, extractor, objects, probe);
+        freshService.crawl("芙莉莲", "DM84");
+        freshService.revalidateCached("芙莉莲", "DM84", objects.find("芙莉莲", "DM84").orElseThrow());
+        org.mockito.Mockito.verify(engine, org.mockito.Mockito.times(1)).search(rule, "芙莉莲");
+
+        ResourceCrawlerService staleService = crawlerWithProbe(
+                registry,
+                engine,
+                extractor,
+                objects,
+                result -> PlaybackProbe.Verdict.STALE
+        );
+        staleService.revalidateCached("芙莉莲", "DM84", objects.find("芙莉莲", "DM84").orElseThrow());
+        assertEquals("https://cdn.example/b.m3u8", objects.find("芙莉莲", "DM84").orElseThrow().videos().get(0).url());
+        org.mockito.Mockito.verify(engine, org.mockito.Mockito.times(2)).search(rule, "芙莉莲");
+    }
+
+    private static ResourceCrawlerService crawlerWithProbe(
+            PluginRegistry registry,
+            RuleEngine engine,
+            MediaExtractor extractor,
+            BlobCrawlResultCache objects,
+            PlaybackProbe probe
+    ) {
+        return new ResourceCrawlerService(
+                registry,
+                engine,
+                extractor,
+                testProperties(),
+                List.of(),
+                SiteCircuitBoard.disabled(),
+                new CrawlSingleflight(),
+                new CaffeineCrawlerResultCache(CrawlerCacheProperties.caffeineOnly()),
+                objects,
+                probe
+        );
+    }
+
+    private static final class MemoryBlob implements ObjectBlobStore {
+        private final Map<String, byte[]> data = new HashMap<>();
+
+        @Override
+        public Optional<byte[]> get(String key) {
+            byte[] body = data.get(key);
+            return body == null ? Optional.empty() : Optional.of(body);
+        }
+
+        @Override
+        public void put(String key, byte[] body) {
+            data.put(key, body);
+        }
+
+        @Override
+        public void delete(String key) {
+            data.remove(key);
+        }
     }
 
     private static AppProperties testProperties() {
