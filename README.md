@@ -126,7 +126,9 @@ flowchart LR
   RES --> SUM["Summary → 推荐语"]
 ```
 
-缓存与会话键前缀隔离：爬虫 `acrawl:play` / `acrawl:catalog`，会话 `asess:meta` / `asess:board` / `asess:mem`。Redis 不可用时读写失败留在本地，不让一次缓存故障打垮检索。
+缓存与会话键前缀隔离：爬虫播放缓存 `acrawl:play` / `acrawl:catalog`，对象缓存热索引 `acrawl:cos:dir`（Hash，目录和大小）/ `acrawl:cos:lru`（ZSet，分数是最近访问时间）/ `acrawl:cos:stats`（已用字节，`HINCRBY`），会话 `asess:meta` / `asess:board` / `asess:mem`。Redis 不可用时读写失败留在本地，不让一次缓存故障打垮检索。
+
+对象缓存本身不按硬 TTL 删除，上限默认 10GB。开了 Redis 之后，Redis 是 LRU 热索引，COS 里的 `cache/v1/index.json` 是备份。命中时用一条 Lua 完成目录读取和节流更新：同一个 key 一分钟内只 `ZADD` 一次，复杂度 O(log N)，一次往返、亚毫秒级，用户路径不重写整份索引。超过上限后，后台任务拿分布式锁，用 `ZRANGE` 取最旧的一批，先删 COS 对象，再删 Hash 和 ZSet，并扣掉已用空间；访问时间最多每 5 分钟写回 COS。Redis 空了就从这份备份重建。没开 Redis 时，仍用 COS 索引，在写入时按最久未使用清理。Redis 自己的内存淘汰是近似 LRU，和这里按分数精确删除不是同一层。
 
 ### 3. 流式交付与可靠性
 
@@ -241,6 +243,7 @@ src/main/java/com/agentcrawler/
 │   ├── fallback/        # YHDM / SiliSili 降级
 │   ├── reliability/     # 熔断、单飞、后台嗅探
 │   └── cache/           # 爬虫出口缓存（播放短 TTL / 目录长 TTL）
+├── cache/               # COS 对象缓存；Redis 热索引，COS index.json 为备份
 ├── link/                # URL / magnet 确定性解析
 ├── streaming/           # SSE 编码、思考进度与生成停止
 └── store/               # 会话 meta / ChatMemory（可选 Redis）
@@ -255,8 +258,8 @@ src/main/java/com/agentcrawler/
 | `DEEPSEEK_API_KEY` | DeepSeek API Key（启用完整 Agent / 识图） | 空 |
 | `DEEPSEEK_BASE_URL` | OpenAI 兼容地址 | `https://api.deepseek.com/v1` |
 | `AGENT_PUBLIC_BASE_URL` | 上传图片对外 URL | `http://localhost:8000` |
-| `AGENT_REDIS_ENABLED` | Redis（爬虫缓存 L2 + 会话持久化） | `false` |
+| `AGENT_REDIS_ENABLED` | Redis。播放缓存 L2、会话，以及对象缓存的 LRU 热索引 | `false` |
 | `COS_SECRET_ID` / `COS_SECRET_KEY` | 私有桶密钥。配齐后，成功检索会再写入对象存储，不按时间过期 | 空 |
 | `COS_BUCKET` | 存储桶名 | 空 |
 | `COS_REGION` | 桶地域 | `ap-guangzhou` |
-| `COS_CACHE_MAX_BYTES` | 对象缓存上限，达到后按最久未使用删除 | `10737418240` |
+| `COS_CACHE_MAX_BYTES` | 对象缓存上限。开了 Redis 后由后台按 ZSet 最久未使用删除，否则在写入时删 | `10737418240` |

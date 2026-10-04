@@ -3,7 +3,9 @@ package com.agentcrawler.config;
 import com.agentcrawler.cache.BlobCrawlResultCache;
 import com.agentcrawler.cache.CacheLookup;
 import com.agentcrawler.cache.CosObjectBlobStore;
+import com.agentcrawler.cache.CrawlHotIndex;
 import com.agentcrawler.cache.CrawlResultCache;
+import com.agentcrawler.cache.RedisCrawlHotIndex;
 import com.agentcrawler.cache.RevalidateSchedule;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.qcloud.cos.COSClient;
@@ -30,7 +32,7 @@ public class CosCacheConfig {
 
     @Bean
     @Conditional(CosCacheCondition.class)
-    CrawlResultCache crawlResultCache(Environment env, ObjectMapper objectMapper) {
+    CrawlResultCache crawlResultCache(Environment env, ObjectMapper objectMapper, CrawlerCacheProperties cacheProperties) {
         String secretId = env.getProperty("COS_SECRET_ID", "");
         String secretKey = env.getProperty("COS_SECRET_KEY", "");
         String region = env.getProperty("COS_REGION", "ap-guangzhou");
@@ -45,12 +47,17 @@ public class CosCacheConfig {
         long ttlSeconds = parseSeconds(env.getProperty("COS_REVALIDATE_TTL_SECONDS"), 7_200);
         long jitterSeconds = parseSeconds(env.getProperty("COS_REVALIDATE_JITTER_SECONDS"), 1_800);
         boolean available = probe(client, bucket, maxBytes, ttlSeconds, jitterSeconds);
+        CrawlHotIndex hotIndex = null;
+        if (cacheProperties.redis().enabled()) {
+            hotIndex = new RedisCrawlHotIndex(cacheProperties.redis(), cacheProperties.keyPrefix());
+        }
         BlobCrawlResultCache store = new BlobCrawlResultCache(
                 new CosObjectBlobStore(client, bucket),
                 objectMapper,
                 maxBytes,
                 Clock.systemUTC(),
-                RevalidateSchedule.of(ttlSeconds * 1000L, jitterSeconds * 1000L)
+                RevalidateSchedule.of(ttlSeconds * 1000L, jitterSeconds * 1000L),
+                hotIndex
         );
         return new ManagedCrawlResultCache(client, store, available);
     }
@@ -101,10 +108,10 @@ public class CosCacheConfig {
 
     private static final class ManagedCrawlResultCache implements CrawlResultCache, DisposableBean {
         private final COSClient client;
-        private final CrawlResultCache delegate;
+        private final BlobCrawlResultCache delegate;
         private final boolean available;
 
-        private ManagedCrawlResultCache(COSClient client, CrawlResultCache delegate, boolean available) {
+        private ManagedCrawlResultCache(COSClient client, BlobCrawlResultCache delegate, boolean available) {
             this.client = client;
             this.delegate = delegate;
             this.available = available;
@@ -151,7 +158,24 @@ public class CosCacheConfig {
         }
 
         @Override
+        public void evictOverflow() {
+            if (!available) {
+                return;
+            }
+            delegate.evictOverflow();
+        }
+
+        @Override
+        public void flushBackupIfStale(long minIntervalMillis) {
+            if (!available) {
+                return;
+            }
+            delegate.flushBackupIfStale(minIntervalMillis);
+        }
+
+        @Override
         public void destroy() {
+            delegate.closeHotIndex();
             client.shutdown();
         }
     }

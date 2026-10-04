@@ -24,4 +24,17 @@ public interface CrawlResultCache {
     /** soon 为真时把下次校验排得更近，用于探测没有明确结论的情况。 */
     default void postpone(String keyword, String site, boolean soon) {
     }
+
+    /** 超出容量时由后台调用。没接热索引时这里什么都不做，写入路径会自己清理。 */
+    default void evictOverflow() {
+    }
+
+    /** 把热索引里变过的访问时间写回对象存储备份。间隔未到就跳过。 */
+    default void flushBackupIfStale(long minIntervalMillis) {
+    }
+
+    default void maintain(long backupIntervalMillis) {
+        evictOverflow();
+        flushBackupIfStale(backupIntervalMillis);
+    }
 }
