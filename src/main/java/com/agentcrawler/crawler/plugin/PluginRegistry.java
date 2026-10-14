@@ -18,6 +18,10 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 
+/**
+ * 启动时加载站点规则。单独用 camelCase ObjectMapper，是因为插件 JSON 沿用 Kazumi 字段名，
+ * 复用 HTTP 那份 SNAKE_CASE Mapper 会让 useWebview、searchList 绑不上。
+ */
 @Component
 public class PluginRegistry {
     private final ObjectMapper objectMapper;

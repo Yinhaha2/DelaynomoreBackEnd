@@ -36,6 +36,7 @@ public class ChatController {
             return ResponseEntity.status(406).build();
         }
 
+        // 逐帧 flush，并在响应头关掉反向代理缓冲。否则卡片要等整段生成结束才到浏览器。
         StreamingResponseBody body = outputStream -> chatService.streamChat(
                 request,
                 frame -> {

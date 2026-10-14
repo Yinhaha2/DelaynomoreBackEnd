@@ -5,7 +5,7 @@ import com.agentcrawler.crawler.model.CrawlResourceResult;
 import java.util.Locale;
 
 /**
- * Infrastructure failures trip the circuit. Empty catalogs and "title not found" do not.
+ * 只有超时、连接失败、5xx 才记入熔断样本。空目录和「没搜到这部」是正常业务结果，记成失败会把还能用的源关掉。
  */
 public final class UpstreamFailureClassifier {
     private UpstreamFailureClassifier() {}

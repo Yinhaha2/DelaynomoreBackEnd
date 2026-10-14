@@ -225,11 +225,14 @@ mvn test
 
 | 文档 | 说明 |
 |------|------|
+| [目录指南](docs/目录指南.md) | 包职责，以及意图 / Tool / SSE / TokenGate / 单飞 / 热索引 / 熔断 / COS 的定位 |
 | [接口文档](docs/接口文档.md) | SSE 协议、资源块、`resource_bundle` 选集卡片、上传与多模态 |
 | [会话标题](docs/会话标题.md) | 首轮 `need_title` / `done.title` |
 | [联调指南](docs/联调指南.md) | 启动、三条主路径、常见问题 |
 
 ## 目录
+
+包职责和面试时先打开哪个类，见 [目录指南](docs/目录指南.md)。下面是骨架：
 
 ```
 src/main/java/com/agentcrawler/

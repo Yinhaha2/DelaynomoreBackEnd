@@ -6,6 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+/**
+ * 事件名只有 chunk / done / error。卡片、正文、思考进度靠 JSON 里的 type 区分，客户端不用为每种内容各接一条 SSE 事件。
+ */
 public final class SseEncoder {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 

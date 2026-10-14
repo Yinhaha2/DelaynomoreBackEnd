@@ -56,6 +56,7 @@ public class ResourceCrawlTools {
                     ResourceCrawlerService.userFacingMessage(ex)
             );
         }
+        // 先入 Buffer 再给模型摘要：模型只能看到线路和集数，播放地址由 SSE 另路下发。
         CrawlResultBuffer.push(SessionContextHolder.get(), result);
         try {
             return objectMapper.writeValueAsString(CrawlToolSummary.from(result));

@@ -30,6 +30,10 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+/**
+ * 对话主入口。有 Key 走 {@link AnimeAgent} 的工具循环，没有 Key 走 {@link CrawlIntentParser}，SSE 出口相同。
+ * 播放地址不进模型：全量结果经 {@link CrawlResultBuffer} 直推卡片，模型只看到摘要后写推荐语。
+ */
 @Component
 public class LangChainStreamingAgent implements AgentHandler {
     private static final Set<String> CRAWL_TOOL_NAMES = Set.of("searchResources", "crawlResources");
@@ -69,6 +73,7 @@ public class LangChainStreamingAgent implements AgentHandler {
             String messageId,
             StreamEmitter emitter
     ) {
+        // Agent Bean 只在有 API Key 时存在。用 ObjectProvider 避免缺 Key 时整个对话入口起不来。
         AnimeAgent animeAgent = animeAgentProvider.getIfAvailable();
         if (animeAgent != null) {
             streamWithAgent(animeAgent, conversationId, userMessage, attachments, needTitle, messageId, emitter);
@@ -119,6 +124,7 @@ public class LangChainStreamingAgent implements AgentHandler {
                         if (GenerationRuns.isStopped(conversationId)) {
                             return;
                         }
+                        // 工具边界才分得清旁白和正文：此前的 token 还没看到工具结果，不能当作用户可见回复。
                         String aside = tokenGate.discardIntermediate();
                         if (aside != null && !aside.isBlank()) {
                             ThinkingReporter.note(aside.strip());
@@ -126,6 +132,7 @@ public class LangChainStreamingAgent implements AgentHandler {
                         String toolName = toolExecution.request().name();
                         if (CRAWL_TOOL_NAMES.contains(toolName)) {
                             ThinkingReporter.note("检索结果已经整理好，正在写回复。");
+                            // 工具返回值只有摘要。卡片从 Buffer 取，避免签名直链进入模型上下文。
                             emitBufferedCrawlResult(conversationId, toolExecution.result(), emitter);
                         }
                     })

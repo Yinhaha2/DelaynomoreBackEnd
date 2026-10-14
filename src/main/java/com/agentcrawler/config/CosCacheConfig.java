@@ -47,6 +47,7 @@ public class CosCacheConfig {
         long ttlSeconds = parseSeconds(env.getProperty("COS_REVALIDATE_TTL_SECONDS"), 7_200);
         long jitterSeconds = parseSeconds(env.getProperty("COS_REVALIDATE_JITTER_SECONDS"), 1_800);
         boolean available = probe(client, bucket, maxBytes, ttlSeconds, jitterSeconds);
+        // Redis 只做 LRU 热索引。正文在 COS；index.json 是热索引备份，Redis 空了靠它重建。没开 Redis 时仍直接用 COS 索引。
         CrawlHotIndex hotIndex = null;
         if (cacheProperties.redis().enabled()) {
             hotIndex = new RedisCrawlHotIndex(cacheProperties.redis(), cacheProperties.keyPrefix());

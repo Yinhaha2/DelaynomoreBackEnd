@@ -4,6 +4,10 @@ import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 无 LLM 时的意图兜底，只认书名号和「找/搜」句式。
+ * 正式路径是 {@link AnimeAgent} 的系统提示，由模型决定要不要调工具。
+ */
 public final class CrawlIntentParser {
     private static final Pattern QUOTED_TITLE = Pattern.compile("《([^》]+)》");
     private static final Pattern SEARCH_PREFIX = Pattern.compile("(?:帮我|请|麻烦)?(?:找|搜|搜索|爬取|检索)(.+?)(?:的(?:播放)?资源|播放链接|链接|资源|$)");

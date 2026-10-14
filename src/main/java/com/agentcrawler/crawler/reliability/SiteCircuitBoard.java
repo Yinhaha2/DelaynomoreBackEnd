@@ -11,7 +11,8 @@ import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.function.LongSupplier;
 
 /**
- * Per-upstream circuit: user traffic never hits OPEN keys. Recovery is background probe only.
+ * 按上游熔断。OPEN 时用户请求直接跳过，不在用户路径上做半开试探，否则试探失败会拖慢这次检索。
+ * 恢复只由 {@link UpstreamProbeScheduler} 的后台 canary 完成。这是自研状态机，没有使用 Resilience4j。
  */
 public class SiteCircuitBoard {
     private static final Logger log = LoggerFactory.getLogger(SiteCircuitBoard.class);

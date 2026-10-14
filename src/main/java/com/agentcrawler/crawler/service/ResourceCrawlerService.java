@@ -207,6 +207,7 @@ public class ResourceCrawlerService {
 
     public CrawlResourceResult crawl(String keyword, String site) {
         String lookup = CrawlCacheKeys.lookup(site, keyword);
+        // 缓存查找放在单飞里面：未命中时只允许一个线程去爬并回填，等待者共享同一次结果。
         return singleflight.run(CrawlSingleflight.key(site, keyword), () -> {
             CrawlResourceResult cached = resultCache.getPlay(lookup);
             if (cached != null) {
@@ -435,6 +436,7 @@ public class ResourceCrawlerService {
         int skipped = 0;
         for (PluginRule rule : candidates) {
             String key = UpstreamKeys.plugin(rule.getName());
+            // OPEN 的源不发用户请求。半开试探在后台，这里跳过是为了让这次检索尽快换到还能用的源。
             if (!circuitBoard.allowRequest(key)) {
                 skipped++;
                 log.info("跳过熔断中的插件 {}", rule.getName());

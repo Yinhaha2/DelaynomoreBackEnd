@@ -24,6 +24,7 @@ public final class CosObjectBlobStore implements ObjectBlobStore {
         try {
             object = client.getObject(bucket, key);
         } catch (CosServiceException ex) {
+            // 404 当未命中：淘汰和读取会并发，缺对象应触发重爬，而不是把存储异常抛进用户请求。
             if (ex.getStatusCode() == 404) {
                 return Optional.empty();
             }

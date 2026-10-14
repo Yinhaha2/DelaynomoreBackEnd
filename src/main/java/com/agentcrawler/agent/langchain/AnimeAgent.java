@@ -5,6 +5,10 @@ import dev.langchain4j.service.SystemMessage;
 import dev.langchain4j.service.TokenStream;
 import dev.langchain4j.service.UserMessage;
 
+/**
+ * 正式的意图识别在这条系统提示里，不另写分类器：找番必须调工具，闲聊禁止调工具。
+ * LangChain4j 按这个接口生成带记忆的流式 Agent。没有 API Key 时这个 Bean 不装配。
+ */
 public interface AnimeAgent {
 
     @SystemMessage("""

@@ -52,6 +52,7 @@ public class LlmConfig {
                 .streamingChatLanguageModel(streamingChatLanguageModel)
                 .chatMemoryProvider(chatMemoryProvider);
 
+        // 工具在这里一次性注册，LangChain4j 才会扫描 @Tool。识图 Bean 可以不存在，缺它不能让检索 Agent 装配失败。
         AnimeVisionTool visionTool = animeVisionToolProvider.getIfAvailable();
         if (visionTool != null) {
             builder.tools(resourceCrawlTools, sessionContextTools, linkInspectorTool, visionTool);
