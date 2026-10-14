@@ -17,7 +17,7 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Recovers OPEN circuits off the user path. One canary GET per upstream, never a full playlist crawl.
+ * 熔断恢复不走用户请求。每个 OPEN 上游只发一次 canary GET，不重爬整份选集，避免探测本身把源打挂。
  */
 @Component
 @ConditionalOnProperty(prefix = "agent.crawler.reliability", name = "enabled", havingValue = "true", matchIfMissing = true)

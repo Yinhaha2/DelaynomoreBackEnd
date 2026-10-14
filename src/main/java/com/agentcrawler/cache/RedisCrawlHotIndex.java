@@ -25,6 +25,7 @@ public final class RedisCrawlHotIndex implements CrawlHotIndex {
     private static final long FAILURE_COOLDOWN_MS = 5_000;
     private static final long LOCK_TTL_MS = 120_000;
 
+    // 命中只读 Hash，并按时间窗节流 ZADD。每次访问都改分数，会把热 key 的写放大到每次请求一次 O(log N)。
     private static final String TOUCH = """
             local meta = redis.call('HGET', KEYS[1], ARGV[1])
             if not meta then

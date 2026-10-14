@@ -99,6 +99,7 @@ public class RuleEngine {
 
     public FetchedPage fetchPageDetailed(PluginRule rule, String url) throws IOException {
         Map<String, String> headers = buildHeaders(rule, url, false);
+        // useWebview 站点的播放地址往往要等 JS。Playwright 槽位有限，抢不到或失败就回退 OkHttp，避免整次检索卡死。
         if (canUseWebView(rule)) {
             try {
                 return webViewFetcher.fetch(url, headers);
